@@ -1,5 +1,6 @@
 """Main GTK4/Adwaita application for sima-gui."""
 
+import signal
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -10,6 +11,7 @@ from gi.repository import Gtk, Adw, GLib, Gio
 from .process import SimaProcess
 from .settings_dialog import SettingsWindow
 from .log_viewer import LogViewer
+from .tray import StatusIcon
 from .config import ensure_dirs
 
 
@@ -25,35 +27,75 @@ class SimaApplication(Adw.Application):
         self.process = SimaProcess()
         self._window = None
         self._log_viewer = None
+        self._status_icon = None
+        self._enabled = True
+        self._first_activation = True
 
         # Connect signals
         self.connect("activate", self._on_activate)
         self.connect("shutdown", self._on_shutdown)
 
+        # Handle SIGINT/SIGTERM for clean shutdown
+        GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGINT, self._on_signal)
+        GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGTERM, self._on_signal)
+
+    def _on_signal(self):
+        """Handle termination signals."""
+        self.quit()
+        return GLib.SOURCE_REMOVE
+
     def _on_activate(self, app):
         """Handle application activation."""
         ensure_dirs()
 
-        if self._window is None:
-            self._window = MainWindow(self)
-            self._window.set_apply_callback(self._on_settings_applied)
+        # Create status icon on first activation
+        if self._status_icon is None:
+            self._status_icon = StatusIcon(self)
+            # Hold the application so it doesn't quit when window closes
+            self.hold()
 
-        self._window.present()
+        # On first activation, just start the service (don't show window)
+        if self._first_activation:
+            self._first_activation = False
+            # Start the process
+            if self._enabled:
+                self.process.start()
+                self._update_status()
+            return
 
-        # Start the process if enabled
-        if self._window.is_enabled():
-            self.process.start()
-            self._window.update_status(True)
+        # On subsequent activations (e.g., running command again), show settings
+        self.show_settings()
 
     def _on_shutdown(self, app):
         """Handle application shutdown."""
         self.process.stop()
+        if self._status_icon:
+            self._status_icon.cleanup()
 
-    def _on_settings_applied(self):
-        """Handle settings being applied."""
-        if self._window and self._window.is_enabled():
-            self.process.restart()
-            self._window.update_status(self.process.is_running)
+    def _update_status(self):
+        """Update status in window and tray."""
+        running = self.process.is_running
+
+        if self._window and self._window.is_visible():
+            self._window.update_status(running)
+
+        if self._status_icon:
+            self._status_icon.update_icon(running)
+
+    def show_settings(self):
+        """Show the settings window."""
+        if self._window is None:
+            self._window = MainWindow(self)
+            self._window.connect("close-request", self._on_window_close)
+
+        self._window.update_status(self.process.is_running)
+        self._window.set_enabled(self._enabled)
+        self._window.present()
+
+    def _on_window_close(self, window):
+        """Handle window close - hide instead of quit."""
+        window.set_visible(False)
+        return True  # Prevent destruction
 
     def show_logs(self):
         """Show the log viewer."""
@@ -66,13 +108,32 @@ class SimaApplication(Adw.Application):
 
     def toggle_service(self, enabled: bool):
         """Toggle the service state."""
+        self._enabled = enabled
+
         if enabled:
             self.process.start()
         else:
             self.process.stop()
 
-        if self._window:
-            self._window.update_status(self.process.is_running)
+        self._update_status()
+
+        # Sync window toggle if visible
+        if self._window and self._window.is_visible():
+            self._window.set_enabled(enabled)
+
+        # Sync tray checkbox
+        if self._status_icon:
+            self._status_icon.set_enabled(enabled)
+
+    def is_enabled(self) -> bool:
+        """Check if service is enabled."""
+        return self._enabled
+
+    def on_settings_applied(self):
+        """Handle settings being applied."""
+        if self._enabled:
+            self.process.restart()
+            self._update_status()
 
 
 class MainWindow(SettingsWindow):
@@ -81,7 +142,6 @@ class MainWindow(SettingsWindow):
     def __init__(self, app: SimaApplication):
         super().__init__(app)
         self._app = app
-        self._enabled = True
 
         # Modify the main page to add status section
         self._add_status_section()
@@ -130,16 +190,18 @@ class MainWindow(SettingsWindow):
 
     def _on_enable_toggled(self, row, pspec):
         """Handle enable toggle."""
-        self._enabled = row.get_active()
-        self._app.toggle_service(self._enabled)
+        enabled = row.get_active()
+        self._app.toggle_service(enabled)
 
     def _on_show_logs(self, row):
         """Show the log viewer."""
         self._app.show_logs()
 
-    def is_enabled(self) -> bool:
-        """Check if service is enabled."""
-        return self._enabled
+    def set_enabled(self, enabled: bool):
+        """Set enabled state without triggering callback."""
+        self.enable_row.handler_block_by_func(self._on_enable_toggled)
+        self.enable_row.set_active(enabled)
+        self.enable_row.handler_unblock_by_func(self._on_enable_toggled)
 
     def update_status(self, running: bool):
         """Update the status display."""
