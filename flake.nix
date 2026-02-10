@@ -25,6 +25,7 @@
           pkgs.harfbuzz
           pkgs.cairo
           pkgs.graphene
+          pkgs.librsvg
         ];
 
         giTypeLibPath = pkgs.lib.makeSearchPath "lib/girepository-1.0" gtkDeps;
@@ -60,10 +61,17 @@
           # Don't wrap twice
           dontWrapGApps = true;
 
+          postInstall = ''
+            # Install icons
+            mkdir -p $out/share/icons/hicolor/scalable/apps
+            cp ${./logos}/*.svg $out/share/icons/hicolor/scalable/apps/
+          '';
+
           preFixup = ''
             makeWrapperArgs+=("''${gappsWrapperArgs[@]}")
             makeWrapperArgs+=("--prefix" "PATH" ":" "${pkgs.lib.makeBinPath [ pkgs.mpd-sima pkgs.xdg-utils ]}")
             makeWrapperArgs+=("--prefix" "GI_TYPELIB_PATH" ":" "${giTypeLibPath}")
+            makeWrapperArgs+=("--prefix" "XDG_DATA_DIRS" ":" "$out/share")
           '';
 
           meta = with pkgs.lib; {

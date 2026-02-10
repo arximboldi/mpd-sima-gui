@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <!-- Enabled state: Dracula light purple -->
+  <circle cx="32" cy="32" r="6" fill="#bd93f9"/>
+  <circle cx="32" cy="32" r="14" fill="none" stroke="#bd93f9" stroke-width="3"/>
+  <path d="M8 26 A26 26 0 0 1 56 26" fill="none" stroke="#bd93f9" stroke-width="4" stroke-linecap="round"/>
+  <polygon points="48,30 56,26 48,18" fill="#bd93f9" transform="rotate(180,53.029703,24.554456)"/>
+  <path d="M56 38 A26 26 0 0 1 8 38" fill="none" stroke="#bd93f9" stroke-width="4" stroke-linecap="round"/>
+  <polygon points="8,38 16,46 16,34" fill="#bd93f9" transform="rotate(180,10.653465,38.415842)"/>
+</svg>

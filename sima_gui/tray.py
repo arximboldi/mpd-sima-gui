@@ -1,11 +1,14 @@
 """System tray support using DBus StatusNotifierItem for GTK4 compatibility."""
 
 import os
+import struct
+from pathlib import Path
 import gi
 
 gi.require_version("Gtk", "4.0")
+gi.require_version("GdkPixbuf", "2.0")
 
-from gi.repository import GLib, Gio
+from gi.repository import GLib, Gio, GdkPixbuf
 
 # DBus interface for StatusNotifierItem
 SNI_INTERFACE = """
@@ -16,6 +19,7 @@ SNI_INTERFACE = """
     <property name="Title" type="s" access="read"/>
     <property name="Status" type="s" access="read"/>
     <property name="IconName" type="s" access="read"/>
+    <property name="IconPixmap" type="a(iiay)" access="read"/>
     <property name="Menu" type="o" access="read"/>
     <signal name="NewIcon"/>
     <signal name="NewTitle"/>
@@ -105,8 +109,9 @@ DBUSMENU_INTERFACE = """
 class StatusIcon:
     """System tray icon using DBus StatusNotifierItem protocol."""
 
-    ICON_ACTIVE = "audio-x-generic"
-    ICON_INACTIVE = "audio-x-generic-symbolic"
+    ICON_ACTIVE = "sima-gui-enabled"
+    ICON_INACTIVE = "sima-gui-disabled"
+    ICON_SIZE = 22  # Standard tray icon size
 
     # Menu item IDs
     MENU_ROOT = 0
@@ -129,8 +134,85 @@ class StatusIcon:
         self._available = False
         self._revision = 1
         self._bus_name = None
+        self._icon_cache = {}
 
+        self._load_icons()
         self._try_register()
+
+    def _find_icon_path(self, icon_name: str) -> Path | None:
+        """Find icon in XDG data directories."""
+        xdg_data_dirs = os.environ.get("XDG_DATA_DIRS", "/usr/share").split(":")
+        xdg_data_dirs.insert(0, str(Path.home() / ".local" / "share"))
+
+        for data_dir in xdg_data_dirs:
+            icon_path = Path(data_dir) / "icons" / "hicolor" / "scalable" / "apps" / f"{icon_name}.svg"
+            if icon_path.exists():
+                return icon_path
+
+        # Also check package directory for development
+        package_dir = Path(__file__).parent.parent / "logos"
+        icon_path = package_dir / f"{icon_name}.svg"
+        if icon_path.exists():
+            return icon_path
+
+        return None
+
+    def _load_icons(self):
+        """Load and cache icon pixmaps."""
+        for icon_name in [self.ICON_ACTIVE, self.ICON_INACTIVE]:
+            icon_path = self._find_icon_path(icon_name)
+            if icon_path:
+                print(f"Found icon {icon_name} at {icon_path}")
+                try:
+                    pixmap = self._svg_to_pixmap(icon_path)
+                    if pixmap:
+                        width, height, data = pixmap
+                        print(f"Loaded icon {icon_name}: {width}x{height}, {len(data)} bytes")
+                        self._icon_cache[icon_name] = pixmap
+                    else:
+                        print(f"Failed to convert icon {icon_name} to pixmap")
+                except Exception as e:
+                    print(f"Failed to load icon {icon_name}: {e}")
+            else:
+                print(f"Icon not found: {icon_name}")
+
+    def _svg_to_pixmap(self, svg_path: Path) -> tuple | None:
+        """Convert SVG to ARGB32 pixmap data for StatusNotifierItem."""
+        try:
+            size = self.ICON_SIZE
+
+            # Load SVG using GdkPixbuf
+            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_size(str(svg_path), size, size)
+
+            # Ensure we have alpha channel
+            if not pixbuf.get_has_alpha():
+                pixbuf = pixbuf.add_alpha(False, 0, 0, 0)
+
+            width = pixbuf.get_width()
+            height = pixbuf.get_height()
+            rowstride = pixbuf.get_rowstride()
+            pixels_raw = pixbuf.get_pixels()
+
+            # GdkPixbuf gives us RGBA, SNI wants ARGB as 32-bit integers in network byte order
+            # Use struct.pack to ensure correct byte order
+            pixel_data = []
+            for y in range(height):
+                for x in range(width):
+                    src_offset = y * rowstride + x * 4
+                    r = pixels_raw[src_offset]
+                    g = pixels_raw[src_offset + 1]
+                    b = pixels_raw[src_offset + 2]
+                    a = pixels_raw[src_offset + 3]
+                    # Pack as big-endian 32-bit ARGB
+                    argb = (a << 24) | (r << 16) | (g << 8) | b
+                    pixel_data.append(struct.pack('>I', argb))
+
+            return (width, height, b''.join(pixel_data))
+        except Exception as e:
+            print(f"Error converting SVG {svg_path}: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
 
     @property
     def available(self) -> bool:
@@ -267,7 +349,21 @@ class StatusIcon:
         elif property_name == "Status":
             return GLib.Variant("s", "Active")
         elif property_name == "IconName":
-            return GLib.Variant("s", self.ICON_ACTIVE if self._running else self.ICON_INACTIVE)
+            # Return empty string to force use of IconPixmap if available
+            icon_name = self.ICON_ACTIVE if self._running else self.ICON_INACTIVE
+            if icon_name in self._icon_cache:
+                return GLib.Variant("s", "")
+            return GLib.Variant("s", icon_name)
+        elif property_name == "IconPixmap":
+            icon_name = self.ICON_ACTIVE if self._running else self.ICON_INACTIVE
+            if icon_name in self._icon_cache:
+                width, height, data = self._icon_cache[icon_name]
+                print(f"IconPixmap requested: {icon_name}, {width}x{height}, {len(data)} bytes")
+                # Convert bytes to list of integers for GLib.Variant
+                pixel_list = list(data)
+                return GLib.Variant("a(iiay)", [(width, height, pixel_list)])
+            print(f"IconPixmap requested but no cache for: {icon_name}")
+            return GLib.Variant("a(iiay)", [])
         elif property_name == "Menu":
             return GLib.Variant("o", "/StatusNotifierItem/Menu")
         return None
