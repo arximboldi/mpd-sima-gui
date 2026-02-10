@@ -25,9 +25,11 @@ plugins that determine how similar tracks are queued.
 - **Change Detection**: Apply button activates only when settings
   have changed
 
-## Screenshots
+## Screenshot
 
-The application runs in the system tray with a simple interface:
+![Settings window](screenshots/settings.png)
+
+The application runs in the system tray:
 - Left click: Open settings
 - Middle click: Toggle enable/disable
 - Right click: Context menu
