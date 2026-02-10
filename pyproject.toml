@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sima-gui"
+version = "0.1.0"
+description = "GTK system tray GUI for mpd-sima"
+readme = "README.md"
+license = {text = "GPL-3.0-or-later"}
+requires-python = ">=3.10"
+dependencies = [
+    "PyGObject>=3.42.0",
+    "pycairo>=1.20.0",
+]
+
+[project.scripts]
+sima-gui = "sima_gui.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sima_gui*"]
