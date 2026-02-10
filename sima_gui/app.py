@@ -154,13 +154,6 @@ class MainWindow(SettingsWindow):
         # Create status group and insert at the top
         status_group = Adw.PreferencesGroup()
 
-        # Service status banner
-        self.status_banner = Adw.Banner(
-            title="mpd-sima is running",
-            revealed=False,
-        )
-        self.status_banner.set_button_label(None)
-
         # Enable switch row
         self.enable_row = Adw.SwitchRow(
             title="Enable mpd-sima",
@@ -183,7 +176,6 @@ class MainWindow(SettingsWindow):
 
         # Insert at the beginning
         box.prepend(status_group)
-        box.prepend(self.status_banner)
 
         # Add some spacing
         status_group.set_margin_bottom(12)
@@ -204,14 +196,5 @@ class MainWindow(SettingsWindow):
         self.enable_row.handler_unblock_by_func(self._on_enable_toggled)
 
     def update_status(self, running: bool):
-        """Update the status display."""
-        if running:
-            self.status_banner.set_title("mpd-sima is running")
-            self.status_banner.add_css_class("success")
-            self.status_banner.remove_css_class("error")
-        else:
-            self.status_banner.set_title("mpd-sima is stopped")
-            self.status_banner.remove_css_class("success")
-            self.status_banner.add_css_class("error")
-
-        self.status_banner.set_revealed(True)
+        """Update the status display (no-op, tray icon shows status)."""
+        pass
