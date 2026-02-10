@@ -514,11 +514,12 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.config.sima.single_disable_queue = self.single_disable.get_active()
         self.config.log.verbosity = self.verbosity.get_model().get_string(self.verbosity.get_selected())
 
-        # Plugins
+        # Plugins (first in list = highest priority)
         enabled = []
+        num_plugins = len(self._plugin_order)
         for i, name in enumerate(self._plugin_order):
             switch = self._plugin_rows[name]["switch"]
-            priority = 10 + (i * 10)
+            priority = (num_plugins - i) * 10
             if switch.get_active():
                 enabled.append(name)
 
