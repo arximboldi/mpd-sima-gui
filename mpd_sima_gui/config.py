@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Juan Pedro Bolívar Puente
+# SPDX-License-Identifier: MIT
+
 """Configuration management for mpd-sima-gui."""
 
 import configparser

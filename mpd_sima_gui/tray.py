@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Juan Pedro Bolívar Puente
+# SPDX-License-Identifier: MIT
+
 """System tray support using DBus StatusNotifierItem for GTK4 compatibility."""
 
 import os

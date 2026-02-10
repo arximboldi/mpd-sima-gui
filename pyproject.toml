@@ -7,7 +7,7 @@ name = "mpd-sima-gui"
 version = "0.1.0"
 description = "GTK system tray GUI for mpd-sima"
 readme = "README.md"
-license = {text = "GPL-3.0-or-later"}
+license = {text = "MIT"}
 requires-python = ">=3.10"
 dependencies = [
     "PyGObject>=3.42.0",

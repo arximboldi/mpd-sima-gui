@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Juan Pedro Bolívar Puente
+# SPDX-License-Identifier: MIT
+
 """Settings dialog for mpd-sima-gui using GTK4/Adwaita."""
 
 import gi
