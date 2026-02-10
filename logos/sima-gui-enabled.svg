@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
   <!-- Enabled state: Dracula light purple -->
-  <circle cx="32" cy="32" r="6" fill="#bd93f9"/>
-  <circle cx="32" cy="32" r="14" fill="none" stroke="#bd93f9" stroke-width="3"/>
-  <path d="M8 26 A26 26 0 0 1 56 26" fill="none" stroke="#bd93f9" stroke-width="4" stroke-linecap="round"/>
-  <polygon points="48,30 56,26 48,18" fill="#bd93f9" transform="rotate(180,53.029703,24.554456)"/>
-  <path d="M56 38 A26 26 0 0 1 8 38" fill="none" stroke="#bd93f9" stroke-width="4" stroke-linecap="round"/>
-  <polygon points="8,38 16,46 16,34" fill="#bd93f9" transform="rotate(180,10.653465,38.415842)"/>
+  <circle cx="32.356304" cy="31.128714" r="7.0891089" fill="#bd93f9" style="stroke-width:1;stroke-dasharray:none"/>
+  <circle cx="32.356304" cy="31.128714" r="16.541254" fill="none" stroke="#bd93f9" stroke-width="4.045" style="stroke-dasharray:none"/>
+  <path d="M 3.9998691,24.039604 C 8.4528365,9.2653543 22.332435,3.5252778 32.356305,3.3927403 43.015453,3.251803 57.051851,9.4237699 60.71274,24.039604" fill="none" stroke="#bd93f9" stroke-width="4.72607" stroke-linecap="round"/>
+  <polygon points="48,18 48,30 56,26" fill="#bd93f9" transform="matrix(-1.1815181,0,0,-1.1815181,119.85883,51.343203)"/>
+  <path d="M 60.71274,38.217822 C 56.418188,52.041577 45.391445,59.973597 32.989968,59.973597 20.588491,59.973597 8.1360049,52.199993 3.9998691,38.217822" fill="none" stroke="#bd93f9" stroke-width="4.72607" stroke-linecap="round"/>
+  <polygon points="16,34 8,38 16,46" fill="#bd93f9" transform="matrix(-1.1815181,0,0,-1.1815181,19.722248,84.098161)"/>
 </svg>
