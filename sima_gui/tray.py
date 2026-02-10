@@ -235,14 +235,14 @@ class StatusIcon:
     def _handle_sni_method_call(self, connection, sender, path, interface, method, params, invocation):
         """Handle StatusNotifierItem method calls."""
         if method == "Activate":
-            # Primary click - toggle enable/disable
-            self._enabled = not self._enabled
-            self._app.toggle_service(self._enabled)
+            # Primary click - show settings
+            self._app.show_settings()
             invocation.return_value(None)
 
         elif method == "SecondaryActivate":
-            # Middle click - show logs
-            self._app.show_logs()
+            # Middle click - toggle enable/disable
+            self._enabled = not self._enabled
+            self._app.toggle_service(self._enabled)
             invocation.return_value(None)
 
         elif method == "ContextMenu":
