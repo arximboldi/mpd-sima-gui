@@ -1,24 +1,24 @@
-"""Log viewer dialog for sima-gui using GTK3."""
+"""Log viewer dialog for sima-gui using GTK4/Adwaita."""
 
 import gi
 
-gi.require_version("Gtk", "3.0")
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
 
-from gi.repository import Gtk, GLib, Pango
+from gi.repository import Gtk, Adw, GLib
 
 from .config import LOG_FILE
 
 
-class LogViewer(Gtk.Window):
-    """Log viewer window."""
+class LogViewer(Adw.Window):
+    """Log viewer window with GTK4/Adwaita."""
 
-    def __init__(self, parent: Gtk.Window | None = None, get_logs_callback=None):
+    def __init__(self, app: Adw.Application, get_logs_callback=None):
         super().__init__(
-            title="mpd-sima Logs",
-            transient_for=parent,
+            application=app,
+            title="Logs",
             default_width=800,
-            default_height=600,
-            window_position=Gtk.WindowPosition.CENTER,
+            default_height=500,
         )
 
         self._get_logs = get_logs_callback
@@ -31,68 +31,66 @@ class LogViewer(Gtk.Window):
         # Set up periodic refresh
         self._refresh_source = GLib.timeout_add(1000, self._refresh_logs)
 
-        self.connect("delete-event", self._on_delete)
+        self.connect("close-request", self._on_close)
 
-    def _on_delete(self, window, event):
+    def _on_close(self, window):
         """Clean up on close."""
         if self._refresh_source:
             GLib.source_remove(self._refresh_source)
             self._refresh_source = None
-        self.hide()
-        return True  # Prevent destruction, just hide
+        return False
 
     def _build_ui(self):
         """Build the log viewer UI."""
-        # Main box
-        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        self.add(main_box)
+        # Toolbar view
+        toolbar_view = Adw.ToolbarView()
+        self.set_content(toolbar_view)
 
         # Header bar
-        header = Gtk.HeaderBar()
-        header.set_show_close_button(True)
-        header.set_title("mpd-sima Logs")
-        self.set_titlebar(header)
+        header = Adw.HeaderBar()
+        toolbar_view.add_top_bar(header)
 
         # Clear button
-        clear_button = Gtk.Button.new_from_icon_name("edit-clear-symbolic", Gtk.IconSize.BUTTON)
-        clear_button.set_tooltip_text("Clear logs")
+        clear_button = Gtk.Button(icon_name="edit-clear-symbolic")
+        clear_button.set_tooltip_text("Clear display")
         clear_button.connect("clicked", self._on_clear)
         header.pack_start(clear_button)
 
         # Open log file button
-        open_button = Gtk.Button.new_from_icon_name("document-open-symbolic", Gtk.IconSize.BUTTON)
-        open_button.set_tooltip_text("Open log file location")
+        open_button = Gtk.Button(icon_name="folder-open-symbolic")
+        open_button.set_tooltip_text("Open log folder")
         open_button.connect("clicked", self._on_open_file)
         header.pack_start(open_button)
 
         # Auto-scroll toggle
-        self.auto_scroll_button = Gtk.ToggleButton()
-        self.auto_scroll_button.set_image(
-            Gtk.Image.new_from_icon_name("go-bottom-symbolic", Gtk.IconSize.BUTTON)
-        )
-        self.auto_scroll_button.set_tooltip_text("Auto-scroll to bottom")
+        self.auto_scroll_button = Gtk.ToggleButton(icon_name="go-bottom-symbolic")
+        self.auto_scroll_button.set_tooltip_text("Auto-scroll")
         self.auto_scroll_button.set_active(True)
         self.auto_scroll_button.connect("toggled", self._on_auto_scroll_toggled)
         header.pack_end(self.auto_scroll_button)
 
         # Scrolled window for logs
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        scrolled.set_vexpand(True)
-        scrolled.set_hexpand(True)
-        main_box.pack_start(scrolled, True, True, 0)
+        scrolled = Gtk.ScrolledWindow(
+            hscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
+            vscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
+            vexpand=True,
+            hexpand=True,
+        )
+        toolbar_view.set_content(scrolled)
 
         # Text view for logs
-        self.text_view = Gtk.TextView()
-        self.text_view.set_editable(False)
-        self.text_view.set_cursor_visible(False)
-        self.text_view.set_monospace(True)
-        self.text_view.set_left_margin(10)
-        self.text_view.set_right_margin(10)
-        self.text_view.set_top_margin(10)
-        self.text_view.set_bottom_margin(10)
-        self.text_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
-        scrolled.add(self.text_view)
+        self.text_view = Gtk.TextView(
+            editable=False,
+            cursor_visible=False,
+            monospace=True,
+            left_margin=12,
+            right_margin=12,
+            top_margin=12,
+            bottom_margin=12,
+            wrap_mode=Gtk.WrapMode.WORD_CHAR,
+        )
+        self.text_view.add_css_class("card")
+        scrolled.set_child(self.text_view)
 
         self.text_buffer = self.text_view.get_buffer()
 
@@ -109,8 +107,8 @@ class LogViewer(Gtk.Window):
 
     def _refresh_logs(self) -> bool:
         """Refresh logs periodically."""
-        if not self.get_visible():
-            return True  # Keep the timeout but don't update
+        if not self.is_visible():
+            return True
 
         if self._get_logs:
             logs = self._get_logs()
@@ -124,7 +122,7 @@ class LogViewer(Gtk.Window):
                 if self._auto_scroll:
                     self._scroll_to_bottom()
 
-        return True  # Continue the timeout
+        return True
 
     def _scroll_to_bottom(self):
         """Scroll to the bottom of the log."""
@@ -147,15 +145,5 @@ class LogViewer(Gtk.Window):
     def _on_auto_scroll_toggled(self, button):
         """Toggle auto-scroll."""
         self._auto_scroll = button.get_active()
-        if self._auto_scroll:
-            self._scroll_to_bottom()
-
-    def append_log(self, line: str):
-        """Append a line to the log."""
-        end_iter = self.text_buffer.get_end_iter()
-        if self.text_buffer.get_char_count() > 0:
-            self.text_buffer.insert(end_iter, "\n")
-        self.text_buffer.insert(self.text_buffer.get_end_iter(), line)
-
         if self._auto_scroll:
             self._scroll_to_bottom()

@@ -3,18 +3,19 @@
 import signal
 import sys
 
-from .tray import SimaTrayApp
-
 
 def main():
     """Main entry point."""
     # Handle Ctrl+C gracefully
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 
-    app = SimaTrayApp()
+    # Import here to avoid loading GTK before signal setup
+    from .app import SimaApplication
+
+    app = SimaApplication()
 
     try:
-        app.run()
+        app.run(sys.argv)
     except KeyboardInterrupt:
         app.process.stop()
         sys.exit(0)

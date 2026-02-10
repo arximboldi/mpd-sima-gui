@@ -1,29 +1,28 @@
-"""Settings dialog for sima-gui using GTK3."""
+"""Settings dialog for sima-gui using GTK4/Adwaita with GNOME Control Center style."""
 
 import gi
 
-gi.require_version("Gtk", "3.0")
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
 
-from gi.repository import Gtk, GLib, Pango
+from gi.repository import Gtk, Adw, GLib, Gio
 
 from .config import SimaConfig, load_config, save_config
 
 
-class SettingsDialog(Gtk.Window):
-    """Settings dialog for mpd-sima configuration."""
+class SettingsWindow(Adw.ApplicationWindow):
+    """Settings window with GNOME Control Center-like navigation."""
 
-    def __init__(self, parent: Gtk.Window | None = None):
+    def __init__(self, app: Adw.Application, apply_callback=None):
         super().__init__(
-            title="mpd-sima Settings",
-            transient_for=parent,
-            modal=True,
-            default_width=700,
+            application=app,
+            title="Sima",
+            default_width=900,
             default_height=650,
-            window_position=Gtk.WindowPosition.CENTER,
         )
 
         self.config = load_config()
-        self._apply_callback = None
+        self._apply_callback = apply_callback
 
         self._build_ui()
 
@@ -32,34 +31,540 @@ class SettingsDialog(Gtk.Window):
         self._apply_callback = callback
 
     def _build_ui(self):
-        """Build the settings UI."""
-        # Main container
-        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        self.add(main_box)
+        """Build the Control Center-style UI."""
+        # Main navigation view
+        self.nav_view = Adw.NavigationView()
+        self.set_content(self.nav_view)
+
+        # Create main page with sidebar-style list
+        self._create_main_page()
+
+        # Create subpages for each section
+        self._create_mpd_page()
+        self._create_general_page()
+        self._create_plugins_page()
+        self._create_lastfm_page()
+        self._create_advanced_page()
+
+    def _create_main_page(self):
+        """Create the main navigation page."""
+        page = Adw.NavigationPage(title="Sima", tag="main")
+
+        # Toolbar view for header
+        toolbar_view = Adw.ToolbarView()
+        page.set_child(toolbar_view)
 
         # Header bar
-        header = Gtk.HeaderBar()
-        header.set_show_close_button(True)
-        header.set_title("mpd-sima Settings")
-        self.set_titlebar(header)
+        header = Adw.HeaderBar()
+        toolbar_view.add_top_bar(header)
 
         # Apply button
         apply_button = Gtk.Button(label="Apply")
-        apply_button.get_style_context().add_class("suggested-action")
+        apply_button.add_css_class("suggested-action")
         apply_button.connect("clicked", self._on_apply)
         header.pack_end(apply_button)
 
-        # Notebook for tabs
-        notebook = Gtk.Notebook()
-        notebook.set_tab_pos(Gtk.PositionType.LEFT)
-        main_box.pack_start(notebook, True, True, 0)
+        # Scrolled content
+        scrolled = Gtk.ScrolledWindow(
+            hscrollbar_policy=Gtk.PolicyType.NEVER,
+            vexpand=True,
+        )
+        toolbar_view.set_content(scrolled)
 
-        # Add pages
-        notebook.append_page(self._create_mpd_page(), Gtk.Label(label="MPD"))
-        notebook.append_page(self._create_sima_page(), Gtk.Label(label="General"))
-        notebook.append_page(self._create_plugins_page(), Gtk.Label(label="Plugins"))
-        notebook.append_page(self._create_lastfm_page(), Gtk.Label(label="Last.fm"))
-        notebook.append_page(self._create_advanced_page(), Gtk.Label(label="Advanced"))
+        # Content box with clamp for proper width
+        clamp = Adw.Clamp(maximum_size=600, margin_top=24, margin_bottom=24)
+        scrolled.set_child(clamp)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=24)
+        clamp.set_child(box)
+
+        # Store reference for subclasses
+        self._main_box = box
+
+        # Navigation items styled like Control Center
+        nav_group = Adw.PreferencesGroup()
+        box.append(nav_group)
+
+        # MPD Connection
+        row = self._create_nav_row(
+            "MPD Connection",
+            "Server address, port, and authentication",
+            "network-server-symbolic",
+            "mpd",
+        )
+        nav_group.add(row)
+
+        # General
+        row = self._create_nav_row(
+            "General",
+            "Queue behavior and logging",
+            "preferences-system-symbolic",
+            "general",
+        )
+        nav_group.add(row)
+
+        # Plugins
+        row = self._create_nav_row(
+            "Plugins",
+            "Crop, Random, and active plugins",
+            "application-x-addon-symbolic",
+            "plugins",
+        )
+        nav_group.add(row)
+
+        # Last.fm
+        row = self._create_nav_row(
+            "Last.fm",
+            "Similar artist recommendations",
+            "audio-x-generic-symbolic",
+            "lastfm",
+        )
+        nav_group.add(row)
+
+        # Advanced
+        row = self._create_nav_row(
+            "Advanced",
+            "Genre and Tags plugins",
+            "preferences-other-symbolic",
+            "advanced",
+        )
+        nav_group.add(row)
+
+        self.nav_view.push(page)
+
+    def _create_nav_row(self, title: str, subtitle: str, icon: str, tag: str) -> Adw.ActionRow:
+        """Create a navigation row."""
+        row = Adw.ActionRow(
+            title=title,
+            subtitle=subtitle,
+            activatable=True,
+        )
+        row.add_prefix(Gtk.Image(icon_name=icon))
+        row.add_suffix(Gtk.Image(icon_name="go-next-symbolic"))
+        row.connect("activated", lambda r: self.nav_view.push_by_tag(tag))
+        return row
+
+    def _create_subpage(self, title: str, tag: str) -> tuple[Adw.NavigationPage, Gtk.Box]:
+        """Create a subpage with standard layout."""
+        page = Adw.NavigationPage(title=title, tag=tag)
+
+        toolbar_view = Adw.ToolbarView()
+        page.set_child(toolbar_view)
+
+        header = Adw.HeaderBar()
+        toolbar_view.add_top_bar(header)
+
+        scrolled = Gtk.ScrolledWindow(
+            hscrollbar_policy=Gtk.PolicyType.NEVER,
+            vexpand=True,
+        )
+        toolbar_view.set_content(scrolled)
+
+        clamp = Adw.Clamp(maximum_size=600, margin_top=24, margin_bottom=24)
+        scrolled.set_child(clamp)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=24)
+        clamp.set_child(box)
+
+        self.nav_view.add(page)
+        return page, box
+
+    def _create_spin_row(self, title: str, subtitle: str, value: int,
+                         min_val: int, max_val: int, step: int = 1) -> Adw.SpinRow:
+        """Create a spin button row."""
+        adjustment = Gtk.Adjustment(
+            value=value,
+            lower=min_val,
+            upper=max_val,
+            step_increment=step,
+            page_increment=10,
+        )
+        row = Adw.SpinRow(
+            title=title,
+            subtitle=subtitle,
+            adjustment=adjustment,
+        )
+        return row
+
+    def _create_entry_row(self, title: str, value: str,
+                          password: bool = False) -> Adw.EntryRow | Adw.PasswordEntryRow:
+        """Create an entry row."""
+        if password:
+            row = Adw.PasswordEntryRow(title=title)
+        else:
+            row = Adw.EntryRow(title=title)
+        row.set_text(value)
+        return row
+
+    def _create_switch_row(self, title: str, subtitle: str, value: bool) -> Adw.SwitchRow:
+        """Create a switch row."""
+        row = Adw.SwitchRow(
+            title=title,
+            subtitle=subtitle,
+            active=value,
+        )
+        return row
+
+    def _create_combo_row(self, title: str, subtitle: str, options: list[str],
+                          current: str) -> Adw.ComboRow:
+        """Create a combo box row."""
+        model = Gtk.StringList()
+        selected_index = 0
+        for i, option in enumerate(options):
+            model.append(option)
+            if option == current:
+                selected_index = i
+
+        row = Adw.ComboRow(
+            title=title,
+            subtitle=subtitle,
+            model=model,
+            selected=selected_index,
+        )
+        return row
+
+    def _create_mpd_page(self):
+        """Create MPD connection settings page."""
+        page, box = self._create_subpage("MPD Connection", "mpd")
+
+        group = Adw.PreferencesGroup(
+            title="Server",
+            description="Configure the MPD server connection",
+        )
+        box.append(group)
+
+        self.mpd_host = self._create_entry_row("Host", self.config.mpd.host)
+        group.add(self.mpd_host)
+
+        self.mpd_port = self._create_spin_row(
+            "Port", "Default: 6600",
+            self.config.mpd.port, 1, 65535,
+        )
+        group.add(self.mpd_port)
+
+        # Authentication group
+        auth_group = Adw.PreferencesGroup(
+            title="Authentication",
+        )
+        box.append(auth_group)
+
+        self.mpd_password = self._create_entry_row(
+            "Password", self.config.mpd.password, password=True
+        )
+        auth_group.add(self.mpd_password)
+
+    def _create_general_page(self):
+        """Create general settings page."""
+        page, box = self._create_subpage("General", "general")
+
+        # Queue group
+        queue_group = Adw.PreferencesGroup(
+            title="Queue",
+            description="Control automatic track queuing",
+        )
+        box.append(queue_group)
+
+        self.queue_length = self._create_spin_row(
+            "Queue Threshold",
+            "Tracks remaining before autoqueue triggers",
+            self.config.sima.queue_length, 0, 100,
+        )
+        queue_group.add(self.queue_length)
+
+        self.history_duration = self._create_spin_row(
+            "History Duration",
+            "Hours to remember played tracks",
+            self.config.sima.history_duration, 0, 168,
+        )
+        queue_group.add(self.history_duration)
+
+        # Behavior group
+        behavior_group = Adw.PreferencesGroup(
+            title="Behavior",
+        )
+        box.append(behavior_group)
+
+        self.musicbrainzid = self._create_switch_row(
+            "Use MusicBrainz IDs",
+            "More accurate artist matching",
+            self.config.sima.musicbrainzid,
+        )
+        behavior_group.add(self.musicbrainzid)
+
+        self.repeat_disable = self._create_switch_row(
+            "Pause in Repeat Mode",
+            "Don't queue tracks during repeat",
+            self.config.sima.repeat_disable_queue,
+        )
+        behavior_group.add(self.repeat_disable)
+
+        self.single_disable = self._create_switch_row(
+            "Pause in Single Mode",
+            "Don't queue tracks during single mode",
+            self.config.sima.single_disable_queue,
+        )
+        behavior_group.add(self.single_disable)
+
+        # Logging group
+        log_group = Adw.PreferencesGroup(
+            title="Logging",
+        )
+        box.append(log_group)
+
+        self.verbosity = self._create_combo_row(
+            "Log Level",
+            "Amount of detail in logs",
+            ["debug", "info", "warning", "error"],
+            self.config.log.verbosity,
+        )
+        log_group.add(self.verbosity)
+
+    def _create_plugins_page(self):
+        """Create plugins configuration page."""
+        page, box = self._create_subpage("Plugins", "plugins")
+
+        # Active plugins
+        plugins_group = Adw.PreferencesGroup(
+            title="Active Plugins",
+            description="Comma-separated list (e.g., Lastfm, Random, Crop)",
+        )
+        box.append(plugins_group)
+
+        self.internal_plugins = self._create_entry_row(
+            "Plugins", self.config.sima.internal
+        )
+        plugins_group.add(self.internal_plugins)
+
+        # Crop expander
+        crop_expander = Adw.ExpanderRow(
+            title="Crop",
+            subtitle="Remove old tracks from playlist",
+        )
+        plugins_group.add(crop_expander)
+
+        self.crop_consume = self._create_spin_row(
+            "Tracks to Keep",
+            "Number of played tracks to retain (-1 = all)",
+            self.config.crop.consume, -1, 1000,
+        )
+        crop_expander.add_row(self.crop_consume)
+
+        self.crop_priority = self._create_spin_row(
+            "Priority", "Lower runs earlier",
+            self.config.crop.priority, 0, 200,
+        )
+        crop_expander.add_row(self.crop_priority)
+
+        # Random expander
+        random_expander = Adw.ExpanderRow(
+            title="Random",
+            subtitle="Fallback random track selection",
+        )
+        plugins_group.add(random_expander)
+
+        self.random_tracks = self._create_spin_row(
+            "Tracks to Add", "",
+            self.config.random.track_to_add, 1, 50,
+        )
+        random_expander.add_row(self.random_tracks)
+
+        self.random_flavour = self._create_combo_row(
+            "Mode", "",
+            ["sensible", "pure"],
+            self.config.random.flavour,
+        )
+        random_expander.add_row(self.random_flavour)
+
+        self.random_priority = self._create_spin_row(
+            "Priority", "",
+            self.config.random.priority, 0, 200,
+        )
+        random_expander.add_row(self.random_priority)
+
+    def _create_lastfm_page(self):
+        """Create Last.fm plugin settings page."""
+        page, box = self._create_subpage("Last.fm", "lastfm")
+
+        # Recommendations group
+        rec_group = Adw.PreferencesGroup(
+            title="Recommendations",
+            description="How to find similar tracks",
+        )
+        box.append(rec_group)
+
+        self.lastfm_queue_mode = self._create_combo_row(
+            "Queue Mode",
+            "Track selection strategy",
+            ["track", "top", "album"],
+            self.config.lastfm.queue_mode,
+        )
+        rec_group.add(self.lastfm_queue_mode)
+
+        self.lastfm_max_art = self._create_spin_row(
+            "Similar Artists Limit",
+            "Maximum artists to consider",
+            self.config.lastfm.max_art, 1, 100,
+        )
+        rec_group.add(self.lastfm_max_art)
+
+        self.lastfm_depth = self._create_spin_row(
+            "History Depth",
+            "Recent tracks to base suggestions on",
+            self.config.lastfm.depth, 1, 10,
+        )
+        rec_group.add(self.lastfm_depth)
+
+        # Track selection group
+        track_group = Adw.PreferencesGroup(
+            title="Selection",
+        )
+        box.append(track_group)
+
+        self.lastfm_track_to_add = self._create_spin_row(
+            "Tracks to Add",
+            "Per selection (track/top modes)",
+            self.config.lastfm.track_to_add, 1, 50,
+        )
+        track_group.add(self.lastfm_track_to_add)
+
+        self.lastfm_album_to_add = self._create_spin_row(
+            "Albums to Add",
+            "Per selection (album mode)",
+            self.config.lastfm.album_to_add, 1, 10,
+        )
+        track_group.add(self.lastfm_album_to_add)
+
+        self.lastfm_tracks_from_album = self._create_spin_row(
+            "Tracks from Album",
+            "0 = entire album",
+            self.config.lastfm.track_to_add_from_album, 0, 50,
+        )
+        track_group.add(self.lastfm_tracks_from_album)
+
+        self.lastfm_single_album = self._create_switch_row(
+            "Prevent Same Album",
+            "Avoid multiple tracks from one album",
+            self.config.lastfm.single_album,
+        )
+        track_group.add(self.lastfm_single_album)
+
+        # Advanced group
+        adv_group = Adw.PreferencesGroup(
+            title="Advanced",
+        )
+        box.append(adv_group)
+
+        self.lastfm_cache = self._create_switch_row(
+            "Cache Responses",
+            "Store API responses for better performance",
+            self.config.lastfm.cache,
+        )
+        adv_group.add(self.lastfm_cache)
+
+        self.lastfm_priority = self._create_spin_row(
+            "Priority", "",
+            self.config.lastfm.priority, 0, 200,
+        )
+        adv_group.add(self.lastfm_priority)
+
+    def _create_advanced_page(self):
+        """Create advanced settings page."""
+        page, box = self._create_subpage("Advanced", "advanced")
+
+        # Genre plugin
+        genre_group = Adw.PreferencesGroup(
+            title="Genre Plugin",
+            description="Offline recommendations using genre tags",
+        )
+        box.append(genre_group)
+
+        self.genre_queue_mode = self._create_combo_row(
+            "Queue Mode", "",
+            ["track", "album"],
+            self.config.genre.queue_mode,
+        )
+        genre_group.add(self.genre_queue_mode)
+
+        self.genre_track_to_add = self._create_spin_row(
+            "Tracks to Add", "",
+            self.config.genre.track_to_add, 1, 50,
+        )
+        genre_group.add(self.genre_track_to_add)
+
+        self.genre_album_to_add = self._create_spin_row(
+            "Albums to Add", "",
+            self.config.genre.album_to_add, 1, 10,
+        )
+        genre_group.add(self.genre_album_to_add)
+
+        self.genre_single_album = self._create_switch_row(
+            "Prevent Same Album", "",
+            self.config.genre.single_album,
+        )
+        genre_group.add(self.genre_single_album)
+
+        self.genre_priority = self._create_spin_row(
+            "Priority", "",
+            self.config.genre.priority, 0, 200,
+        )
+        genre_group.add(self.genre_priority)
+
+        # Tags plugin
+        tags_group = Adw.PreferencesGroup(
+            title="Tags Plugin",
+            description="Custom MPD filter-based queuing",
+        )
+        box.append(tags_group)
+
+        self.tags_queue_mode = self._create_combo_row(
+            "Queue Mode", "",
+            ["track", "album"],
+            self.config.tags.queue_mode,
+        )
+        tags_group.add(self.tags_queue_mode)
+
+        self.tags_filter = self._create_entry_row(
+            "Filter Expression", self.config.tags.filter
+        )
+        tags_group.add(self.tags_filter)
+
+        self.tags_genre = self._create_entry_row(
+            "Genre", self.config.tags.genre
+        )
+        tags_group.add(self.tags_genre)
+
+        self.tags_date = self._create_entry_row(
+            "Date", self.config.tags.date
+        )
+        tags_group.add(self.tags_date)
+
+        self.tags_comment = self._create_entry_row(
+            "Comment", self.config.tags.comment
+        )
+        tags_group.add(self.tags_comment)
+
+        self.tags_label = self._create_entry_row(
+            "Label", self.config.tags.label
+        )
+        tags_group.add(self.tags_label)
+
+        self.tags_track_to_add = self._create_spin_row(
+            "Tracks to Add", "",
+            self.config.tags.track_to_add, 1, 50,
+        )
+        tags_group.add(self.tags_track_to_add)
+
+        self.tags_single_album = self._create_switch_row(
+            "Prevent Same Album", "",
+            self.config.tags.single_album,
+        )
+        tags_group.add(self.tags_single_album)
+
+        self.tags_priority = self._create_spin_row(
+            "Priority", "",
+            self.config.tags.priority, 0, 200,
+        )
+        tags_group.add(self.tags_priority)
 
     def _on_apply(self, button):
         """Handle apply button click."""
@@ -69,478 +574,10 @@ class SettingsDialog(Gtk.Window):
         if self._apply_callback:
             self._apply_callback()
 
-        self.hide()
-
-    def _create_frame(self, title: str, description: str = "") -> tuple[Gtk.Frame, Gtk.Grid]:
-        """Create a frame with a grid inside."""
-        frame = Gtk.Frame()
-        frame.set_margin_top(10)
-        frame.set_margin_bottom(10)
-        frame.set_margin_start(10)
-        frame.set_margin_end(10)
-
-        label_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        title_label = Gtk.Label()
-        title_label.set_markup(f"<b>{title}</b>")
-        title_label.set_halign(Gtk.Align.START)
-        label_box.pack_start(title_label, False, False, 0)
-
-        if description:
-            desc_label = Gtk.Label(label=description)
-            desc_label.set_halign(Gtk.Align.START)
-            desc_label.get_style_context().add_class("dim-label")
-            label_box.pack_start(desc_label, False, False, 0)
-
-        frame.set_label_widget(label_box)
-
-        grid = Gtk.Grid()
-        grid.set_row_spacing(8)
-        grid.set_column_spacing(12)
-        grid.set_margin_top(10)
-        grid.set_margin_bottom(10)
-        grid.set_margin_start(10)
-        grid.set_margin_end(10)
-        frame.add(grid)
-
-        return frame, grid
-
-    def _add_entry_row(self, grid: Gtk.Grid, row: int, label: str, value: str,
-                       tooltip: str = "", password: bool = False) -> Gtk.Entry:
-        """Add an entry row to a grid."""
-        lbl = Gtk.Label(label=label)
-        lbl.set_halign(Gtk.Align.END)
-        lbl.set_margin_end(5)
-        grid.attach(lbl, 0, row, 1, 1)
-
-        entry = Gtk.Entry()
-        entry.set_text(value)
-        entry.set_hexpand(True)
-        if tooltip:
-            entry.set_tooltip_text(tooltip)
-        if password:
-            entry.set_visibility(False)
-            entry.set_input_purpose(Gtk.InputPurpose.PASSWORD)
-        grid.attach(entry, 1, row, 1, 1)
-
-        return entry
-
-    def _add_spin_row(self, grid: Gtk.Grid, row: int, label: str, value: int,
-                      min_val: int, max_val: int, tooltip: str = "") -> Gtk.SpinButton:
-        """Add a spin button row to a grid."""
-        lbl = Gtk.Label(label=label)
-        lbl.set_halign(Gtk.Align.END)
-        lbl.set_margin_end(5)
-        grid.attach(lbl, 0, row, 1, 1)
-
-        adjustment = Gtk.Adjustment(
-            value=value,
-            lower=min_val,
-            upper=max_val,
-            step_increment=1,
-            page_increment=10,
-        )
-        spin = Gtk.SpinButton()
-        spin.set_adjustment(adjustment)
-        spin.set_numeric(True)
-        spin.set_hexpand(True)
-        if tooltip:
-            spin.set_tooltip_text(tooltip)
-        grid.attach(spin, 1, row, 1, 1)
-
-        return spin
-
-    def _add_switch_row(self, grid: Gtk.Grid, row: int, label: str, value: bool,
-                        tooltip: str = "") -> Gtk.Switch:
-        """Add a switch row to a grid."""
-        lbl = Gtk.Label(label=label)
-        lbl.set_halign(Gtk.Align.END)
-        lbl.set_margin_end(5)
-        grid.attach(lbl, 0, row, 1, 1)
-
-        switch = Gtk.Switch()
-        switch.set_active(value)
-        switch.set_halign(Gtk.Align.START)
-        if tooltip:
-            switch.set_tooltip_text(tooltip)
-        grid.attach(switch, 1, row, 1, 1)
-
-        return switch
-
-    def _add_combo_row(self, grid: Gtk.Grid, row: int, label: str, options: list[str],
-                       current: str, tooltip: str = "") -> Gtk.ComboBoxText:
-        """Add a combo box row to a grid."""
-        lbl = Gtk.Label(label=label)
-        lbl.set_halign(Gtk.Align.END)
-        lbl.set_margin_end(5)
-        grid.attach(lbl, 0, row, 1, 1)
-
-        combo = Gtk.ComboBoxText()
-        for option in options:
-            combo.append_text(option)
-
-        # Set active item
-        try:
-            index = options.index(current)
-            combo.set_active(index)
-        except ValueError:
-            combo.set_active(0)
-
-        combo.set_hexpand(True)
-        if tooltip:
-            combo.set_tooltip_text(tooltip)
-        grid.attach(combo, 1, row, 1, 1)
-
-        return combo
-
-    def _create_mpd_page(self) -> Gtk.ScrolledWindow:
-        """Create MPD connection settings page."""
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        scrolled.add(box)
-
-        # Connection settings
-        frame, grid = self._create_frame("Connection", "MPD server connection settings")
-        box.pack_start(frame, False, False, 0)
-
-        self.mpd_host = self._add_entry_row(
-            grid, 0, "Host:",
-            self.config.mpd.host,
-            "MPD server address (IP or hostname)"
-        )
-
-        self.mpd_port = self._add_spin_row(
-            grid, 1, "Port:",
-            self.config.mpd.port,
-            1, 65535,
-            "MPD server port"
-        )
-
-        self.mpd_password = self._add_entry_row(
-            grid, 2, "Password:",
-            self.config.mpd.password,
-            "Authentication password (leave empty if not required)",
-            password=True
-        )
-
-        return scrolled
-
-    def _create_sima_page(self) -> Gtk.ScrolledWindow:
-        """Create core sima settings page."""
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        scrolled.add(box)
-
-        # Queue management
-        frame, grid = self._create_frame("Queue Management", "Control how tracks are automatically queued")
-        box.pack_start(frame, False, False, 0)
-
-        self.queue_length = self._add_spin_row(
-            grid, 0, "Queue Threshold:",
-            self.config.sima.queue_length,
-            0, 100,
-            "Number of tracks remaining before autoqueue triggers"
-        )
-
-        self.history_duration = self._add_spin_row(
-            grid, 1, "History Duration (hours):",
-            self.config.sima.history_duration,
-            0, 168,
-            "How long to remember played tracks to avoid repeats"
-        )
-
-        # Behavior
-        frame, grid = self._create_frame("Behavior", "Control when autoqueue is active")
-        box.pack_start(frame, False, False, 0)
-
-        self.musicbrainzid = self._add_switch_row(
-            grid, 0, "Use MusicBrainz IDs:",
-            self.config.sima.musicbrainzid,
-            "Use MusicBrainz identifiers for more accurate matching"
-        )
-
-        self.repeat_disable = self._add_switch_row(
-            grid, 1, "Disable in Repeat Mode:",
-            self.config.sima.repeat_disable_queue,
-            "Don't queue tracks when repeat mode is enabled"
-        )
-
-        self.single_disable = self._add_switch_row(
-            grid, 2, "Disable in Single Mode:",
-            self.config.sima.single_disable_queue,
-            "Don't queue tracks when single mode is enabled"
-        )
-
-        # Logging
-        frame, grid = self._create_frame("Logging", "Configure logging behavior")
-        box.pack_start(frame, False, False, 0)
-
-        self.verbosity = self._add_combo_row(
-            grid, 0, "Log Level:",
-            ["debug", "info", "warning", "error"],
-            self.config.log.verbosity,
-            "Amount of detail in logs"
-        )
-
-        return scrolled
-
-    def _create_plugins_page(self) -> Gtk.ScrolledWindow:
-        """Create plugins configuration page."""
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        scrolled.add(box)
-
-        # Active plugins
-        frame, grid = self._create_frame("Active Plugins", "Comma-separated list of plugins to use")
-        box.pack_start(frame, False, False, 0)
-
-        self.internal_plugins = self._add_entry_row(
-            grid, 0, "Plugins:",
-            self.config.sima.internal,
-            "Available: Lastfm, Random, Crop, Genre, Tags"
-        )
-
-        # Crop plugin
-        frame, grid = self._create_frame("Crop Plugin", "Manages playlist length by removing old tracks")
-        box.pack_start(frame, False, False, 0)
-
-        self.crop_consume = self._add_spin_row(
-            grid, 0, "Tracks to Keep:",
-            self.config.crop.consume,
-            -1, 1000,
-            "Number of played tracks to retain (-1 = keep all)"
-        )
-
-        self.crop_priority = self._add_spin_row(
-            grid, 1, "Priority:",
-            self.config.crop.priority,
-            0, 200,
-            "Plugin execution order (lower = earlier)"
-        )
-
-        # Random plugin
-        frame, grid = self._create_frame("Random Plugin", "Fallback random track selection")
-        box.pack_start(frame, False, False, 0)
-
-        self.random_tracks = self._add_spin_row(
-            grid, 0, "Tracks to Add:",
-            self.config.random.track_to_add,
-            1, 50,
-            "Number of random tracks to queue"
-        )
-
-        self.random_flavour = self._add_combo_row(
-            grid, 1, "Flavour:",
-            ["sensible", "pure"],
-            self.config.random.flavour,
-            "Selection mode: sensible respects history, pure is fully random"
-        )
-
-        self.random_priority = self._add_spin_row(
-            grid, 2, "Priority:",
-            self.config.random.priority,
-            0, 200,
-            "Plugin execution order (lower = earlier)"
-        )
-
-        return scrolled
-
-    def _create_lastfm_page(self) -> Gtk.ScrolledWindow:
-        """Create Last.fm plugin settings page."""
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        scrolled.add(box)
-
-        # Main settings
-        frame, grid = self._create_frame("Recommendation Settings", "Configure how Last.fm recommendations work")
-        box.pack_start(frame, False, False, 0)
-
-        self.lastfm_queue_mode = self._add_combo_row(
-            grid, 0, "Queue Mode:",
-            ["track", "top", "album"],
-            self.config.lastfm.queue_mode,
-            "How to select tracks from similar artists"
-        )
-
-        self.lastfm_max_art = self._add_spin_row(
-            grid, 1, "Max Similar Artists:",
-            self.config.lastfm.max_art,
-            1, 100,
-            "Maximum number of similar artists to retrieve"
-        )
-
-        self.lastfm_depth = self._add_spin_row(
-            grid, 2, "History Depth:",
-            self.config.lastfm.depth,
-            1, 10,
-            "How many recent tracks to use for suggestions"
-        )
-
-        # Track selection
-        frame, grid = self._create_frame("Track Selection", "Configure track and album queuing")
-        box.pack_start(frame, False, False, 0)
-
-        self.lastfm_track_to_add = self._add_spin_row(
-            grid, 0, "Tracks to Add:",
-            self.config.lastfm.track_to_add,
-            1, 50,
-            "Tracks per selection (track/top modes)"
-        )
-
-        self.lastfm_album_to_add = self._add_spin_row(
-            grid, 1, "Albums to Add:",
-            self.config.lastfm.album_to_add,
-            1, 10,
-            "Albums per selection (album mode)"
-        )
-
-        self.lastfm_tracks_from_album = self._add_spin_row(
-            grid, 2, "Tracks from Album:",
-            self.config.lastfm.track_to_add_from_album,
-            0, 50,
-            "Tracks per album (0 = queue entire album)"
-        )
-
-        self.lastfm_single_album = self._add_switch_row(
-            grid, 3, "Prevent Same Album:",
-            self.config.lastfm.single_album,
-            "Don't queue multiple tracks from the same album"
-        )
-
-        # Advanced
-        frame, grid = self._create_frame("Advanced", "Additional Last.fm settings")
-        box.pack_start(frame, False, False, 0)
-
-        self.lastfm_cache = self._add_switch_row(
-            grid, 0, "Enable Cache:",
-            self.config.lastfm.cache,
-            "Cache Last.fm API responses for better performance"
-        )
-
-        self.lastfm_priority = self._add_spin_row(
-            grid, 1, "Priority:",
-            self.config.lastfm.priority,
-            0, 200,
-            "Plugin execution order (lower = earlier)"
-        )
-
-        return scrolled
-
-    def _create_advanced_page(self) -> Gtk.ScrolledWindow:
-        """Create advanced settings page with Genre and Tags plugins."""
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        scrolled.add(box)
-
-        # Genre plugin
-        frame, grid = self._create_frame("Genre Plugin", "Tag-based offline recommendations using genre matching")
-        box.pack_start(frame, False, False, 0)
-
-        self.genre_queue_mode = self._add_combo_row(
-            grid, 0, "Queue Mode:",
-            ["track", "album"],
-            self.config.genre.queue_mode,
-            "Track or album selection"
-        )
-
-        self.genre_track_to_add = self._add_spin_row(
-            grid, 1, "Tracks to Add:",
-            self.config.genre.track_to_add,
-            1, 50,
-            "Number of tracks to queue"
-        )
-
-        self.genre_album_to_add = self._add_spin_row(
-            grid, 2, "Albums to Add:",
-            self.config.genre.album_to_add,
-            1, 10,
-            "Number of albums to queue (album mode)"
-        )
-
-        self.genre_single_album = self._add_switch_row(
-            grid, 3, "Prevent Same Album:",
-            self.config.genre.single_album,
-            "Don't queue multiple tracks from the same album"
-        )
-
-        self.genre_priority = self._add_spin_row(
-            grid, 4, "Priority:",
-            self.config.genre.priority,
-            0, 200,
-            "Plugin execution order"
-        )
-
-        # Tags plugin
-        frame, grid = self._create_frame("Tags Plugin", "Custom MPD filter-based queuing")
-        box.pack_start(frame, False, False, 0)
-
-        self.tags_queue_mode = self._add_combo_row(
-            grid, 0, "Queue Mode:",
-            ["track", "album"],
-            self.config.tags.queue_mode,
-            "Track or album selection"
-        )
-
-        self.tags_filter = self._add_entry_row(
-            grid, 1, "Filter Expression:",
-            self.config.tags.filter,
-            "Raw MPD protocol filter expression"
-        )
-
-        self.tags_genre = self._add_entry_row(
-            grid, 2, "Genre:",
-            self.config.tags.genre,
-            "Comma-separated genre names (OR logic)"
-        )
-
-        self.tags_date = self._add_entry_row(
-            grid, 3, "Date:",
-            self.config.tags.date,
-            "Year range or filter expression"
-        )
-
-        self.tags_comment = self._add_entry_row(
-            grid, 4, "Comment:",
-            self.config.tags.comment,
-            "Comma-separated values (OR logic)"
-        )
-
-        self.tags_label = self._add_entry_row(
-            grid, 5, "Label:",
-            self.config.tags.label,
-            "Record label values"
-        )
-
-        self.tags_track_to_add = self._add_spin_row(
-            grid, 6, "Tracks to Add:",
-            self.config.tags.track_to_add,
-            1, 50,
-            "Number of tracks to queue"
-        )
-
-        self.tags_single_album = self._add_switch_row(
-            grid, 7, "Prevent Same Album:",
-            self.config.tags.single_album,
-            "Don't queue multiple tracks from the same album"
-        )
-
-        self.tags_priority = self._add_spin_row(
-            grid, 8, "Priority:",
-            self.config.tags.priority,
-            0, 200,
-            "Plugin execution order"
-        )
-
-        return scrolled
+        # Show toast
+        toast = Adw.Toast(title="Settings applied")
+        # Find toast overlay if we have one, or just close
+        self.close()
 
     def _save_all_settings(self):
         """Save all settings from UI to config object."""
@@ -558,7 +595,9 @@ class SettingsDialog(Gtk.Window):
         self.config.sima.internal = self.internal_plugins.get_text()
 
         # Log
-        self.config.log.verbosity = self.verbosity.get_active_text()
+        verbosity_model = self.verbosity.get_model()
+        verbosity_index = self.verbosity.get_selected()
+        self.config.log.verbosity = verbosity_model.get_string(verbosity_index)
 
         # Crop
         self.config.crop.consume = int(self.crop_consume.get_value())
@@ -566,11 +605,15 @@ class SettingsDialog(Gtk.Window):
 
         # Random
         self.config.random.track_to_add = int(self.random_tracks.get_value())
-        self.config.random.flavour = self.random_flavour.get_active_text()
+        flavour_model = self.random_flavour.get_model()
+        flavour_index = self.random_flavour.get_selected()
+        self.config.random.flavour = flavour_model.get_string(flavour_index)
         self.config.random.priority = int(self.random_priority.get_value())
 
         # Lastfm
-        self.config.lastfm.queue_mode = self.lastfm_queue_mode.get_active_text()
+        queue_mode_model = self.lastfm_queue_mode.get_model()
+        queue_mode_index = self.lastfm_queue_mode.get_selected()
+        self.config.lastfm.queue_mode = queue_mode_model.get_string(queue_mode_index)
         self.config.lastfm.max_art = int(self.lastfm_max_art.get_value())
         self.config.lastfm.depth = int(self.lastfm_depth.get_value())
         self.config.lastfm.track_to_add = int(self.lastfm_track_to_add.get_value())
@@ -581,14 +624,18 @@ class SettingsDialog(Gtk.Window):
         self.config.lastfm.priority = int(self.lastfm_priority.get_value())
 
         # Genre
-        self.config.genre.queue_mode = self.genre_queue_mode.get_active_text()
+        genre_mode_model = self.genre_queue_mode.get_model()
+        genre_mode_index = self.genre_queue_mode.get_selected()
+        self.config.genre.queue_mode = genre_mode_model.get_string(genre_mode_index)
         self.config.genre.track_to_add = int(self.genre_track_to_add.get_value())
         self.config.genre.album_to_add = int(self.genre_album_to_add.get_value())
         self.config.genre.single_album = self.genre_single_album.get_active()
         self.config.genre.priority = int(self.genre_priority.get_value())
 
         # Tags
-        self.config.tags.queue_mode = self.tags_queue_mode.get_active_text()
+        tags_mode_model = self.tags_queue_mode.get_model()
+        tags_mode_index = self.tags_queue_mode.get_selected()
+        self.config.tags.queue_mode = tags_mode_model.get_string(tags_mode_index)
         self.config.tags.filter = self.tags_filter.get_text()
         self.config.tags.genre = self.tags_genre.get_text()
         self.config.tags.date = self.tags_date.get_text()

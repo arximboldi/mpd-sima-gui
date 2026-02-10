@@ -1,5 +1,5 @@
 {
-  description = "GTK system tray GUI for mpd-sima";
+  description = "GTK4/Adwaita GUI for mpd-sima";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -15,17 +15,16 @@
         pythonPackages = python.pkgs;
 
         # Runtime dependencies for GObject introspection
-        # Use .out where needed to get the lib output with typelibs
         gtkDeps = [
-          pkgs.gtk3
-          pkgs.libayatana-appindicator
+          pkgs.gtk4
+          pkgs.libadwaita
           pkgs.gobject-introspection
           pkgs.gdk-pixbuf
           pkgs.pango.out
           pkgs.glib.out
           pkgs.harfbuzz
           pkgs.cairo
-          pkgs.at-spi2-core
+          pkgs.graphene
         ];
 
         giTypeLibPath = pkgs.lib.makeSearchPath "lib/girepository-1.0" gtkDeps;
@@ -48,7 +47,7 @@
             wheel
           ] ++ [
             pkgs.gobject-introspection
-            pkgs.wrapGAppsHook3
+            pkgs.wrapGAppsHook4
           ];
 
           buildInputs = gtkDeps;
@@ -68,7 +67,7 @@
           '';
 
           meta = with pkgs.lib; {
-            description = "GTK system tray GUI for mpd-sima";
+            description = "GTK4/Adwaita GUI for mpd-sima";
             homepage = "https://github.com/example/sima-gui";
             license = licenses.gpl3Plus;
             maintainers = [];
@@ -99,7 +98,7 @@
           shellHook = ''
             export GI_TYPELIB_PATH="${giTypeLibPath}"
             export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath gtkDeps}"
-            echo "sima-gui development environment"
+            echo "sima-gui development environment (GTK4/Adwaita)"
             echo "Run: python -m sima_gui"
           '';
         };
