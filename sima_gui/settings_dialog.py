@@ -10,6 +10,42 @@ from gi.repository import Gtk, Adw, GLib, Gio
 from .config import SimaConfig, load_config, save_config
 
 
+# Plugin definitions with their settings
+PLUGINS = {
+    "Crop": {
+        "description": "Remove old tracks from the queue",
+        "settings": ["consume"],
+    },
+    "Random": {
+        "description": "Queue random tracks as fallback",
+        "settings": ["random_track_to_add", "random_flavour"],
+    },
+    "Lastfm": {
+        "description": "Recommendations based on Last.fm data",
+        "settings": [
+            "lastfm_queue_mode", "lastfm_max_art", "lastfm_depth",
+            "lastfm_track_to_add", "lastfm_album_to_add",
+            "lastfm_single_album", "lastfm_cache"
+        ],
+    },
+    "Genre": {
+        "description": "Queue tracks with similar genre tags",
+        "settings": [
+            "genre_queue_mode", "genre_track_to_add",
+            "genre_album_to_add", "genre_single_album"
+        ],
+    },
+    "Tags": {
+        "description": "Queue tracks using custom tag filters",
+        "settings": [
+            "tags_queue_mode", "tags_filter", "tags_genre",
+            "tags_date", "tags_comment", "tags_label",
+            "tags_track_to_add", "tags_single_album"
+        ],
+    },
+}
+
+
 class SettingsWindow(Adw.ApplicationWindow):
     """Settings window with GNOME Control Center-like navigation."""
 
@@ -23,6 +59,9 @@ class SettingsWindow(Adw.ApplicationWindow):
 
         self.config = load_config()
         self._apply_callback = apply_callback
+        self._plugin_rows = {}  # Store plugin rows for reordering
+        self._plugin_widgets = {}  # Store setting widgets
+        self._plugin_order = []  # Track plugin order explicitly
 
         self._build_ui()
 
@@ -39,12 +78,10 @@ class SettingsWindow(Adw.ApplicationWindow):
         # Create main page with sidebar-style list
         self._create_main_page()
 
-        # Create subpages for each section
+        # Create subpages
         self._create_mpd_page()
         self._create_general_page()
         self._create_plugins_page()
-        self._create_lastfm_page()
-        self._create_advanced_page()
 
     def _create_main_page(self):
         """Create the main navigation page."""
@@ -106,27 +143,9 @@ class SettingsWindow(Adw.ApplicationWindow):
         # Plugins
         row = self._create_nav_row(
             "Plugins",
-            "Crop, Random, and active plugins",
+            "Configure recommendation sources",
             "application-x-addon-symbolic",
             "plugins",
-        )
-        nav_group.add(row)
-
-        # Last.fm
-        row = self._create_nav_row(
-            "Last.fm",
-            "Similar artist recommendations",
-            "audio-x-generic-symbolic",
-            "lastfm",
-        )
-        nav_group.add(row)
-
-        # Advanced
-        row = self._create_nav_row(
-            "Advanced",
-            "Genre and Tags plugins",
-            "preferences-other-symbolic",
-            "advanced",
         )
         nav_group.add(row)
 
@@ -320,251 +339,284 @@ class SettingsWindow(Adw.ApplicationWindow):
         log_group.add(self.verbosity)
 
     def _create_plugins_page(self):
-        """Create plugins configuration page."""
+        """Create unified plugins configuration page."""
         page, box = self._create_subpage("Plugins", "plugins")
 
-        # Active plugins
-        plugins_group = Adw.PreferencesGroup(
+        # Parse current plugin order from config
+        current_plugins = [p.strip() for p in self.config.sima.internal.split(",") if p.strip()]
+
+        # Ensure all known plugins are in the list (disabled ones at the end)
+        all_plugins = list(PLUGINS.keys())
+        enabled_plugins = [p for p in current_plugins if p in all_plugins]
+        disabled_plugins = [p for p in all_plugins if p not in enabled_plugins]
+
+        # Info text
+        info_group = Adw.PreferencesGroup(
+            description="Enable plugins and drag to reorder. Plugins are executed from top to bottom.",
+        )
+        box.append(info_group)
+
+        # Plugin list
+        self._plugins_group = Adw.PreferencesGroup(
             title="Active Plugins",
-            description="Comma-separated list (e.g., Lastfm, Random, Crop)",
         )
-        box.append(plugins_group)
+        box.append(self._plugins_group)
 
-        self.internal_plugins = self._create_entry_row(
-            "Plugins", self.config.sima.internal
+        # Add enabled plugins first (in order), then disabled ones
+        for plugin_name in enabled_plugins + disabled_plugins:
+            is_enabled = plugin_name in enabled_plugins
+            self._add_plugin_row(plugin_name, is_enabled)
+
+    def _add_plugin_row(self, plugin_name: str, enabled: bool):
+        """Add a plugin row with settings."""
+        plugin_info = PLUGINS[plugin_name]
+
+        # Create expander row for plugin
+        expander = Adw.ExpanderRow(
+            title=plugin_name,
+            subtitle=plugin_info["description"],
         )
-        plugins_group.add(self.internal_plugins)
 
-        # Crop expander
-        crop_expander = Adw.ExpanderRow(
-            title="Crop",
-            subtitle="Remove old tracks from playlist",
-        )
-        plugins_group.add(crop_expander)
+        # Enable switch
+        switch = Gtk.Switch(valign=Gtk.Align.CENTER)
+        switch.set_active(enabled)
+        switch.connect("notify::active", self._on_plugin_toggled, plugin_name)
+        expander.add_prefix(switch)
 
-        self.crop_consume = self._create_spin_row(
-            "Tracks to Keep",
-            "Number of played tracks to retain (-1 = all)",
-            self.config.crop.consume, -1, 1000,
-        )
-        crop_expander.add_row(self.crop_consume)
+        # Reorder buttons
+        button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        button_box.set_valign(Gtk.Align.CENTER)
 
-        self.crop_priority = self._create_spin_row(
-            "Priority", "Lower runs earlier",
-            self.config.crop.priority, 0, 200,
-        )
-        crop_expander.add_row(self.crop_priority)
+        up_button = Gtk.Button(icon_name="go-up-symbolic")
+        up_button.add_css_class("flat")
+        up_button.set_tooltip_text("Move up")
+        up_button.connect("clicked", self._on_move_plugin_up, plugin_name)
+        button_box.append(up_button)
 
-        # Random expander
-        random_expander = Adw.ExpanderRow(
-            title="Random",
-            subtitle="Fallback random track selection",
-        )
-        plugins_group.add(random_expander)
+        down_button = Gtk.Button(icon_name="go-down-symbolic")
+        down_button.add_css_class("flat")
+        down_button.set_tooltip_text("Move down")
+        down_button.connect("clicked", self._on_move_plugin_down, plugin_name)
+        button_box.append(down_button)
 
-        self.random_tracks = self._create_spin_row(
-            "Tracks to Add", "",
-            self.config.random.track_to_add, 1, 50,
-        )
-        random_expander.add_row(self.random_tracks)
+        expander.add_suffix(button_box)
 
-        self.random_flavour = self._create_combo_row(
-            "Mode", "",
-            ["sensible", "pure"],
-            self.config.random.flavour,
-        )
-        random_expander.add_row(self.random_flavour)
+        # Add plugin-specific settings
+        self._add_plugin_settings(expander, plugin_name)
 
-        self.random_priority = self._create_spin_row(
-            "Priority", "",
-            self.config.random.priority, 0, 200,
-        )
-        random_expander.add_row(self.random_priority)
+        # Store references
+        self._plugin_rows[plugin_name] = {
+            "expander": expander,
+            "switch": switch,
+            "up_button": up_button,
+            "down_button": down_button,
+        }
 
-    def _create_lastfm_page(self):
-        """Create Last.fm plugin settings page."""
-        page, box = self._create_subpage("Last.fm", "lastfm")
+        self._plugins_group.add(expander)
+        self._plugin_order.append(plugin_name)
 
-        # Recommendations group
-        rec_group = Adw.PreferencesGroup(
-            title="Recommendations",
-            description="How to find similar tracks",
-        )
-        box.append(rec_group)
+    def _add_plugin_settings(self, expander: Adw.ExpanderRow, plugin_name: str):
+        """Add settings rows for a specific plugin."""
+        if plugin_name == "Crop":
+            row = self._create_spin_row(
+                "Tracks to Keep",
+                "Played tracks to retain (-1 = all)",
+                self.config.crop.consume, -1, 1000,
+            )
+            self._plugin_widgets["consume"] = row
+            expander.add_row(row)
 
-        self.lastfm_queue_mode = self._create_combo_row(
-            "Queue Mode",
-            "Track selection strategy",
-            ["track", "top", "album"],
-            self.config.lastfm.queue_mode,
-        )
-        rec_group.add(self.lastfm_queue_mode)
+        elif plugin_name == "Random":
+            row = self._create_spin_row(
+                "Tracks to Add", "",
+                self.config.random.track_to_add, 1, 50,
+            )
+            self._plugin_widgets["random_track_to_add"] = row
+            expander.add_row(row)
 
-        self.lastfm_max_art = self._create_spin_row(
-            "Similar Artists Limit",
-            "Maximum artists to consider",
-            self.config.lastfm.max_art, 1, 100,
-        )
-        rec_group.add(self.lastfm_max_art)
+            row = self._create_combo_row(
+                "Mode", "Selection strategy",
+                ["sensible", "pure"],
+                self.config.random.flavour,
+            )
+            self._plugin_widgets["random_flavour"] = row
+            expander.add_row(row)
 
-        self.lastfm_depth = self._create_spin_row(
-            "History Depth",
-            "Recent tracks to base suggestions on",
-            self.config.lastfm.depth, 1, 10,
-        )
-        rec_group.add(self.lastfm_depth)
+        elif plugin_name == "Lastfm":
+            row = self._create_combo_row(
+                "Queue Mode", "",
+                ["track", "top", "album"],
+                self.config.lastfm.queue_mode,
+            )
+            self._plugin_widgets["lastfm_queue_mode"] = row
+            expander.add_row(row)
 
-        # Track selection group
-        track_group = Adw.PreferencesGroup(
-            title="Selection",
-        )
-        box.append(track_group)
+            row = self._create_spin_row(
+                "Similar Artists Limit", "",
+                self.config.lastfm.max_art, 1, 100,
+            )
+            self._plugin_widgets["lastfm_max_art"] = row
+            expander.add_row(row)
 
-        self.lastfm_track_to_add = self._create_spin_row(
-            "Tracks to Add",
-            "Per selection (track/top modes)",
-            self.config.lastfm.track_to_add, 1, 50,
-        )
-        track_group.add(self.lastfm_track_to_add)
+            row = self._create_spin_row(
+                "History Depth", "",
+                self.config.lastfm.depth, 1, 10,
+            )
+            self._plugin_widgets["lastfm_depth"] = row
+            expander.add_row(row)
 
-        self.lastfm_album_to_add = self._create_spin_row(
-            "Albums to Add",
-            "Per selection (album mode)",
-            self.config.lastfm.album_to_add, 1, 10,
-        )
-        track_group.add(self.lastfm_album_to_add)
+            row = self._create_spin_row(
+                "Tracks to Add", "",
+                self.config.lastfm.track_to_add, 1, 50,
+            )
+            self._plugin_widgets["lastfm_track_to_add"] = row
+            expander.add_row(row)
 
-        self.lastfm_tracks_from_album = self._create_spin_row(
-            "Tracks from Album",
-            "0 = entire album",
-            self.config.lastfm.track_to_add_from_album, 0, 50,
-        )
-        track_group.add(self.lastfm_tracks_from_album)
+            row = self._create_spin_row(
+                "Albums to Add", "",
+                self.config.lastfm.album_to_add, 1, 10,
+            )
+            self._plugin_widgets["lastfm_album_to_add"] = row
+            expander.add_row(row)
 
-        self.lastfm_single_album = self._create_switch_row(
-            "Prevent Same Album",
-            "Avoid multiple tracks from one album",
-            self.config.lastfm.single_album,
-        )
-        track_group.add(self.lastfm_single_album)
+            row = self._create_switch_row(
+                "Prevent Same Album", "",
+                self.config.lastfm.single_album,
+            )
+            self._plugin_widgets["lastfm_single_album"] = row
+            expander.add_row(row)
 
-        # Advanced group
-        adv_group = Adw.PreferencesGroup(
-            title="Advanced",
-        )
-        box.append(adv_group)
+            row = self._create_switch_row(
+                "Cache Responses", "",
+                self.config.lastfm.cache,
+            )
+            self._plugin_widgets["lastfm_cache"] = row
+            expander.add_row(row)
 
-        self.lastfm_cache = self._create_switch_row(
-            "Cache Responses",
-            "Store API responses for better performance",
-            self.config.lastfm.cache,
-        )
-        adv_group.add(self.lastfm_cache)
+        elif plugin_name == "Genre":
+            row = self._create_combo_row(
+                "Queue Mode", "",
+                ["track", "album"],
+                self.config.genre.queue_mode,
+            )
+            self._plugin_widgets["genre_queue_mode"] = row
+            expander.add_row(row)
 
-        self.lastfm_priority = self._create_spin_row(
-            "Priority", "",
-            self.config.lastfm.priority, 0, 200,
-        )
-        adv_group.add(self.lastfm_priority)
+            row = self._create_spin_row(
+                "Tracks to Add", "",
+                self.config.genre.track_to_add, 1, 50,
+            )
+            self._plugin_widgets["genre_track_to_add"] = row
+            expander.add_row(row)
 
-    def _create_advanced_page(self):
-        """Create advanced settings page."""
-        page, box = self._create_subpage("Advanced", "advanced")
+            row = self._create_spin_row(
+                "Albums to Add", "",
+                self.config.genre.album_to_add, 1, 10,
+            )
+            self._plugin_widgets["genre_album_to_add"] = row
+            expander.add_row(row)
 
-        # Genre plugin
-        genre_group = Adw.PreferencesGroup(
-            title="Genre Plugin",
-            description="Offline recommendations using genre tags",
-        )
-        box.append(genre_group)
+            row = self._create_switch_row(
+                "Prevent Same Album", "",
+                self.config.genre.single_album,
+            )
+            self._plugin_widgets["genre_single_album"] = row
+            expander.add_row(row)
 
-        self.genre_queue_mode = self._create_combo_row(
-            "Queue Mode", "",
-            ["track", "album"],
-            self.config.genre.queue_mode,
-        )
-        genre_group.add(self.genre_queue_mode)
+        elif plugin_name == "Tags":
+            row = self._create_combo_row(
+                "Queue Mode", "",
+                ["track", "album"],
+                self.config.tags.queue_mode,
+            )
+            self._plugin_widgets["tags_queue_mode"] = row
+            expander.add_row(row)
 
-        self.genre_track_to_add = self._create_spin_row(
-            "Tracks to Add", "",
-            self.config.genre.track_to_add, 1, 50,
-        )
-        genre_group.add(self.genre_track_to_add)
+            row = self._create_entry_row(
+                "Filter Expression", self.config.tags.filter
+            )
+            self._plugin_widgets["tags_filter"] = row
+            expander.add_row(row)
 
-        self.genre_album_to_add = self._create_spin_row(
-            "Albums to Add", "",
-            self.config.genre.album_to_add, 1, 10,
-        )
-        genre_group.add(self.genre_album_to_add)
+            row = self._create_entry_row(
+                "Genre", self.config.tags.genre
+            )
+            self._plugin_widgets["tags_genre"] = row
+            expander.add_row(row)
 
-        self.genre_single_album = self._create_switch_row(
-            "Prevent Same Album", "",
-            self.config.genre.single_album,
-        )
-        genre_group.add(self.genre_single_album)
+            row = self._create_entry_row(
+                "Date", self.config.tags.date
+            )
+            self._plugin_widgets["tags_date"] = row
+            expander.add_row(row)
 
-        self.genre_priority = self._create_spin_row(
-            "Priority", "",
-            self.config.genre.priority, 0, 200,
-        )
-        genre_group.add(self.genre_priority)
+            row = self._create_entry_row(
+                "Comment", self.config.tags.comment
+            )
+            self._plugin_widgets["tags_comment"] = row
+            expander.add_row(row)
 
-        # Tags plugin
-        tags_group = Adw.PreferencesGroup(
-            title="Tags Plugin",
-            description="Custom MPD filter-based queuing",
-        )
-        box.append(tags_group)
+            row = self._create_entry_row(
+                "Label", self.config.tags.label
+            )
+            self._plugin_widgets["tags_label"] = row
+            expander.add_row(row)
 
-        self.tags_queue_mode = self._create_combo_row(
-            "Queue Mode", "",
-            ["track", "album"],
-            self.config.tags.queue_mode,
-        )
-        tags_group.add(self.tags_queue_mode)
+            row = self._create_spin_row(
+                "Tracks to Add", "",
+                self.config.tags.track_to_add, 1, 50,
+            )
+            self._plugin_widgets["tags_track_to_add"] = row
+            expander.add_row(row)
 
-        self.tags_filter = self._create_entry_row(
-            "Filter Expression", self.config.tags.filter
-        )
-        tags_group.add(self.tags_filter)
+            row = self._create_switch_row(
+                "Prevent Same Album", "",
+                self.config.tags.single_album,
+            )
+            self._plugin_widgets["tags_single_album"] = row
+            expander.add_row(row)
 
-        self.tags_genre = self._create_entry_row(
-            "Genre", self.config.tags.genre
-        )
-        tags_group.add(self.tags_genre)
+    def _on_plugin_toggled(self, switch, pspec, plugin_name):
+        """Handle plugin enable/disable toggle."""
+        pass  # State is read when saving
 
-        self.tags_date = self._create_entry_row(
-            "Date", self.config.tags.date
-        )
-        tags_group.add(self.tags_date)
+    def _get_plugin_order(self) -> list[str]:
+        """Get current plugin order."""
+        return list(self._plugin_order)
 
-        self.tags_comment = self._create_entry_row(
-            "Comment", self.config.tags.comment
-        )
-        tags_group.add(self.tags_comment)
+    def _on_move_plugin_up(self, button, plugin_name):
+        """Move plugin up in the list."""
+        order = self._get_plugin_order()
+        idx = order.index(plugin_name)
+        if idx > 0:
+            self._rebuild_plugin_list(order, idx, idx - 1)
 
-        self.tags_label = self._create_entry_row(
-            "Label", self.config.tags.label
-        )
-        tags_group.add(self.tags_label)
+    def _on_move_plugin_down(self, button, plugin_name):
+        """Move plugin down in the list."""
+        order = self._get_plugin_order()
+        idx = order.index(plugin_name)
+        if idx < len(order) - 1:
+            self._rebuild_plugin_list(order, idx, idx + 1)
 
-        self.tags_track_to_add = self._create_spin_row(
-            "Tracks to Add", "",
-            self.config.tags.track_to_add, 1, 50,
-        )
-        tags_group.add(self.tags_track_to_add)
+    def _rebuild_plugin_list(self, order: list[str], from_idx: int, to_idx: int):
+        """Rebuild the plugin list with new order."""
+        # Swap positions
+        order[from_idx], order[to_idx] = order[to_idx], order[from_idx]
 
-        self.tags_single_album = self._create_switch_row(
-            "Prevent Same Album", "",
-            self.config.tags.single_album,
-        )
-        tags_group.add(self.tags_single_album)
+        # Save current switch states
+        old_switches = {name: data["switch"].get_active() for name, data in self._plugin_rows.items()}
 
-        self.tags_priority = self._create_spin_row(
-            "Priority", "",
-            self.config.tags.priority, 0, 200,
-        )
-        tags_group.add(self.tags_priority)
+        # Remove all rows
+        for name in list(self._plugin_rows.keys()):
+            self._plugins_group.remove(self._plugin_rows[name]["expander"])
+
+        # Clear stored references
+        self._plugin_rows.clear()
+        self._plugin_order.clear()
+
+        # Re-add in new order
+        for plugin_name in order:
+            self._add_plugin_row(plugin_name, old_switches[plugin_name])
 
     def _on_apply(self, button):
         """Handle apply button click."""
@@ -576,7 +628,6 @@ class SettingsWindow(Adw.ApplicationWindow):
 
         # Show toast
         toast = Adw.Toast(title="Settings applied")
-        # Find toast overlay if we have one, or just close
         self.close()
 
     def _save_all_settings(self):
@@ -586,61 +637,101 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.config.mpd.port = int(self.mpd_port.get_value())
         self.config.mpd.password = self.mpd_password.get_text()
 
-        # Sima
+        # Sima general
         self.config.sima.queue_length = int(self.queue_length.get_value())
         self.config.sima.history_duration = int(self.history_duration.get_value())
         self.config.sima.musicbrainzid = self.musicbrainzid.get_active()
         self.config.sima.repeat_disable_queue = self.repeat_disable.get_active()
         self.config.sima.single_disable_queue = self.single_disable.get_active()
-        self.config.sima.internal = self.internal_plugins.get_text()
 
         # Log
         verbosity_model = self.verbosity.get_model()
         verbosity_index = self.verbosity.get_selected()
         self.config.log.verbosity = verbosity_model.get_string(verbosity_index)
 
-        # Crop
-        self.config.crop.consume = int(self.crop_consume.get_value())
-        self.config.crop.priority = int(self.crop_priority.get_value())
+        # Build plugin list from order and enabled state
+        enabled_plugins = []
+        order = self._get_plugin_order()
+        base_priority = 10
 
-        # Random
-        self.config.random.track_to_add = int(self.random_tracks.get_value())
-        flavour_model = self.random_flavour.get_model()
-        flavour_index = self.random_flavour.get_selected()
-        self.config.random.flavour = flavour_model.get_string(flavour_index)
-        self.config.random.priority = int(self.random_priority.get_value())
+        for i, plugin_name in enumerate(order):
+            switch = self._plugin_rows[plugin_name]["switch"]
+            if switch.get_active():
+                enabled_plugins.append(plugin_name)
 
-        # Lastfm
-        queue_mode_model = self.lastfm_queue_mode.get_model()
-        queue_mode_index = self.lastfm_queue_mode.get_selected()
-        self.config.lastfm.queue_mode = queue_mode_model.get_string(queue_mode_index)
-        self.config.lastfm.max_art = int(self.lastfm_max_art.get_value())
-        self.config.lastfm.depth = int(self.lastfm_depth.get_value())
-        self.config.lastfm.track_to_add = int(self.lastfm_track_to_add.get_value())
-        self.config.lastfm.album_to_add = int(self.lastfm_album_to_add.get_value())
-        self.config.lastfm.track_to_add_from_album = int(self.lastfm_tracks_from_album.get_value())
-        self.config.lastfm.single_album = self.lastfm_single_album.get_active()
-        self.config.lastfm.cache = self.lastfm_cache.get_active()
-        self.config.lastfm.priority = int(self.lastfm_priority.get_value())
+            # Set priority based on position
+            priority = base_priority + (i * 10)
+            if plugin_name == "Crop":
+                self.config.crop.priority = priority
+            elif plugin_name == "Random":
+                self.config.random.priority = priority
+            elif plugin_name == "Lastfm":
+                self.config.lastfm.priority = priority
+            elif plugin_name == "Genre":
+                self.config.genre.priority = priority
+            elif plugin_name == "Tags":
+                self.config.tags.priority = priority
 
-        # Genre
-        genre_mode_model = self.genre_queue_mode.get_model()
-        genre_mode_index = self.genre_queue_mode.get_selected()
-        self.config.genre.queue_mode = genre_mode_model.get_string(genre_mode_index)
-        self.config.genre.track_to_add = int(self.genre_track_to_add.get_value())
-        self.config.genre.album_to_add = int(self.genre_album_to_add.get_value())
-        self.config.genre.single_album = self.genre_single_album.get_active()
-        self.config.genre.priority = int(self.genre_priority.get_value())
+        self.config.sima.internal = ", ".join(enabled_plugins)
 
-        # Tags
-        tags_mode_model = self.tags_queue_mode.get_model()
-        tags_mode_index = self.tags_queue_mode.get_selected()
-        self.config.tags.queue_mode = tags_mode_model.get_string(tags_mode_index)
-        self.config.tags.filter = self.tags_filter.get_text()
-        self.config.tags.genre = self.tags_genre.get_text()
-        self.config.tags.date = self.tags_date.get_text()
-        self.config.tags.comment = self.tags_comment.get_text()
-        self.config.tags.label = self.tags_label.get_text()
-        self.config.tags.track_to_add = int(self.tags_track_to_add.get_value())
-        self.config.tags.single_album = self.tags_single_album.get_active()
-        self.config.tags.priority = int(self.tags_priority.get_value())
+        # Crop settings
+        if "consume" in self._plugin_widgets:
+            self.config.crop.consume = int(self._plugin_widgets["consume"].get_value())
+
+        # Random settings
+        if "random_track_to_add" in self._plugin_widgets:
+            self.config.random.track_to_add = int(self._plugin_widgets["random_track_to_add"].get_value())
+        if "random_flavour" in self._plugin_widgets:
+            model = self._plugin_widgets["random_flavour"].get_model()
+            idx = self._plugin_widgets["random_flavour"].get_selected()
+            self.config.random.flavour = model.get_string(idx)
+
+        # Lastfm settings
+        if "lastfm_queue_mode" in self._plugin_widgets:
+            model = self._plugin_widgets["lastfm_queue_mode"].get_model()
+            idx = self._plugin_widgets["lastfm_queue_mode"].get_selected()
+            self.config.lastfm.queue_mode = model.get_string(idx)
+        if "lastfm_max_art" in self._plugin_widgets:
+            self.config.lastfm.max_art = int(self._plugin_widgets["lastfm_max_art"].get_value())
+        if "lastfm_depth" in self._plugin_widgets:
+            self.config.lastfm.depth = int(self._plugin_widgets["lastfm_depth"].get_value())
+        if "lastfm_track_to_add" in self._plugin_widgets:
+            self.config.lastfm.track_to_add = int(self._plugin_widgets["lastfm_track_to_add"].get_value())
+        if "lastfm_album_to_add" in self._plugin_widgets:
+            self.config.lastfm.album_to_add = int(self._plugin_widgets["lastfm_album_to_add"].get_value())
+        if "lastfm_single_album" in self._plugin_widgets:
+            self.config.lastfm.single_album = self._plugin_widgets["lastfm_single_album"].get_active()
+        if "lastfm_cache" in self._plugin_widgets:
+            self.config.lastfm.cache = self._plugin_widgets["lastfm_cache"].get_active()
+
+        # Genre settings
+        if "genre_queue_mode" in self._plugin_widgets:
+            model = self._plugin_widgets["genre_queue_mode"].get_model()
+            idx = self._plugin_widgets["genre_queue_mode"].get_selected()
+            self.config.genre.queue_mode = model.get_string(idx)
+        if "genre_track_to_add" in self._plugin_widgets:
+            self.config.genre.track_to_add = int(self._plugin_widgets["genre_track_to_add"].get_value())
+        if "genre_album_to_add" in self._plugin_widgets:
+            self.config.genre.album_to_add = int(self._plugin_widgets["genre_album_to_add"].get_value())
+        if "genre_single_album" in self._plugin_widgets:
+            self.config.genre.single_album = self._plugin_widgets["genre_single_album"].get_active()
+
+        # Tags settings
+        if "tags_queue_mode" in self._plugin_widgets:
+            model = self._plugin_widgets["tags_queue_mode"].get_model()
+            idx = self._plugin_widgets["tags_queue_mode"].get_selected()
+            self.config.tags.queue_mode = model.get_string(idx)
+        if "tags_filter" in self._plugin_widgets:
+            self.config.tags.filter = self._plugin_widgets["tags_filter"].get_text()
+        if "tags_genre" in self._plugin_widgets:
+            self.config.tags.genre = self._plugin_widgets["tags_genre"].get_text()
+        if "tags_date" in self._plugin_widgets:
+            self.config.tags.date = self._plugin_widgets["tags_date"].get_text()
+        if "tags_comment" in self._plugin_widgets:
+            self.config.tags.comment = self._plugin_widgets["tags_comment"].get_text()
+        if "tags_label" in self._plugin_widgets:
+            self.config.tags.label = self._plugin_widgets["tags_label"].get_text()
+        if "tags_track_to_add" in self._plugin_widgets:
+            self.config.tags.track_to_add = int(self._plugin_widgets["tags_track_to_add"].get_value())
+        if "tags_single_album" in self._plugin_widgets:
+            self.config.tags.single_album = self._plugin_widgets["tags_single_album"].get_active()
