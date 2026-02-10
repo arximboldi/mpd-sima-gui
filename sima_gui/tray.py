@@ -113,9 +113,10 @@ class StatusIcon:
     MENU_ENABLED = 1
     MENU_SEP1 = 2
     MENU_LOGS = 3
-    MENU_SETTINGS = 4
-    MENU_SEP2 = 5
-    MENU_QUIT = 6
+    MENU_CONFIG = 4
+    MENU_SETTINGS = 5
+    MENU_SEP2 = 6
+    MENU_QUIT = 7
 
     def __init__(self, app):
         self._app = app
@@ -371,6 +372,12 @@ class StatusIcon:
                 "enabled": GLib.Variant("b", True),
                 "visible": GLib.Variant("b", True),
             }
+        elif item_id == self.MENU_CONFIG:
+            return {
+                "label": GLib.Variant("s", "Show Config"),
+                "enabled": GLib.Variant("b", True),
+                "visible": GLib.Variant("b", True),
+            }
         elif item_id == self.MENU_SETTINGS:
             return {
                 "label": GLib.Variant("s", "Settings"),
@@ -398,6 +405,7 @@ class StatusIcon:
             self.MENU_ENABLED,
             self.MENU_SEP1,
             self.MENU_LOGS,
+            self.MENU_CONFIG,
             self.MENU_SETTINGS,
             self.MENU_SEP2,
             self.MENU_QUIT,
@@ -423,6 +431,8 @@ class StatusIcon:
             self._emit_properties_updated()
         elif item_id == self.MENU_LOGS:
             self._app.show_logs()
+        elif item_id == self.MENU_CONFIG:
+            self._app.show_config()
         elif item_id == self.MENU_SETTINGS:
             self._app.show_settings()
         elif item_id == self.MENU_QUIT:

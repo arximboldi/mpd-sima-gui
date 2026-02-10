@@ -12,7 +12,7 @@ from .process import SimaProcess
 from .settings_dialog import SettingsWindow
 from .log_viewer import LogViewer
 from .tray import StatusIcon
-from .config import ensure_dirs
+from .config import ensure_dirs, CONFIG_FILE
 
 
 class SimaApplication(Adw.Application):
@@ -27,6 +27,7 @@ class SimaApplication(Adw.Application):
         self.process = SimaProcess()
         self._window = None
         self._log_viewer = None
+        self._config_viewer = None
         self._status_icon = None
         self._enabled = True
         self._first_activation = True
@@ -106,6 +107,13 @@ class SimaApplication(Adw.Application):
             )
         self._log_viewer.present()
 
+    def show_config(self):
+        """Show the config viewer."""
+        if self._config_viewer is None:
+            self._config_viewer = ConfigViewer(self)
+        self._config_viewer.load_config()
+        self._config_viewer.present()
+
     def toggle_service(self, enabled: bool):
         """Toggle the service state."""
         self._enabled = enabled
@@ -136,11 +144,81 @@ class SimaApplication(Adw.Application):
             self._update_status()
 
 
+class ConfigViewer(Adw.Window):
+    """Config viewer window."""
+
+    def __init__(self, app: Adw.Application):
+        super().__init__(
+            application=app,
+            title="Configuration",
+            default_width=600,
+            default_height=400,
+        )
+
+        self._build_ui()
+        self.connect("close-request", self._on_close)
+
+    def _on_close(self, window):
+        """Hide on close instead of destroying."""
+        window.set_visible(False)
+        return True
+
+    def _build_ui(self):
+        """Build the config viewer UI."""
+        toolbar_view = Adw.ToolbarView()
+        self.set_content(toolbar_view)
+
+        header = Adw.HeaderBar()
+        toolbar_view.add_top_bar(header)
+
+        # Open config file button
+        open_button = Gtk.Button(icon_name="folder-open-symbolic")
+        open_button.set_tooltip_text("Open config folder")
+        open_button.connect("clicked", self._on_open_folder)
+        header.pack_start(open_button)
+
+        # Scrolled window for config
+        scrolled = Gtk.ScrolledWindow(
+            hscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
+            vscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
+            vexpand=True,
+            hexpand=True,
+        )
+        toolbar_view.set_content(scrolled)
+
+        self.text_view = Gtk.TextView(
+            editable=False,
+            cursor_visible=False,
+            monospace=True,
+            left_margin=12,
+            right_margin=12,
+            top_margin=12,
+            bottom_margin=12,
+        )
+        self.text_view.add_css_class("card")
+        scrolled.set_child(self.text_view)
+
+        self.text_buffer = self.text_view.get_buffer()
+
+    def load_config(self):
+        """Load and display the config file."""
+        if CONFIG_FILE.exists():
+            text = CONFIG_FILE.read_text()
+        else:
+            text = "(No configuration file yet - apply settings to create one)"
+        self.text_buffer.set_text(text)
+
+    def _on_open_folder(self, button):
+        """Open the config folder."""
+        import subprocess
+        subprocess.run(["xdg-open", str(CONFIG_FILE.parent)])
+
+
 class MainWindow(SettingsWindow):
     """Main window combining status and settings."""
 
     def __init__(self, app: SimaApplication):
-        super().__init__(app)
+        super().__init__(app, apply_callback=app.on_settings_applied)
         self._app = app
 
         # Modify the main page to add status section
@@ -174,6 +252,17 @@ class MainWindow(SettingsWindow):
         logs_row.connect("activated", self._on_show_logs)
         status_group.add(logs_row)
 
+        # Config row
+        config_row = Adw.ActionRow(
+            title="View Config",
+            subtitle="See current configuration file",
+            activatable=True,
+        )
+        config_row.add_prefix(Gtk.Image(icon_name="document-properties-symbolic"))
+        config_row.add_suffix(Gtk.Image(icon_name="go-next-symbolic"))
+        config_row.connect("activated", self._on_show_config)
+        status_group.add(config_row)
+
         # Insert at the beginning
         box.prepend(status_group)
 
@@ -188,6 +277,10 @@ class MainWindow(SettingsWindow):
     def _on_show_logs(self, row):
         """Show the log viewer."""
         self._app.show_logs()
+
+    def _on_show_config(self, row):
+        """Show the config viewer."""
+        self._app.show_config()
 
     def set_enabled(self, enabled: bool):
         """Set enabled state without triggering callback."""

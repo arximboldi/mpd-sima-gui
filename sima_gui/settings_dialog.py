@@ -35,8 +35,14 @@ class SettingsWindow(Adw.ApplicationWindow):
         self._plugin_rows = {}
         self._plugin_widgets = {}
         self._plugin_order = []
+        self._initial_plugin_order = []
+        self._initial_plugin_enabled = {}
+        self._has_changes = False
+        self._apply_button = None
 
         self._build_ui()
+        self._connect_change_signals()
+        self._store_initial_state()
 
     def set_apply_callback(self, callback):
         self._apply_callback = callback
@@ -63,10 +69,11 @@ class SettingsWindow(Adw.ApplicationWindow):
         header = Adw.HeaderBar()
         toolbar_view.add_top_bar(header)
 
-        apply_button = Gtk.Button(label="Apply")
-        apply_button.add_css_class("suggested-action")
-        apply_button.connect("clicked", self._on_apply)
-        header.pack_end(apply_button)
+        self._apply_button = Gtk.Button(label="Apply")
+        self._apply_button.add_css_class("suggested-action")
+        self._apply_button.set_sensitive(False)
+        self._apply_button.connect("clicked", self._on_apply)
+        header.pack_end(self._apply_button)
 
         scrolled = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
         toolbar_view.set_content(scrolled)
@@ -479,12 +486,19 @@ class SettingsWindow(Adw.ApplicationWindow):
         for name in order:
             self._add_plugin_row(name, old_switches[name])
 
+        # Reconnect switch signals and check for changes
+        for name, data in self._plugin_rows.items():
+            data["switch"].connect("notify::active", self._on_value_changed)
+        self._check_for_changes()
+
     def _on_apply(self, button):
         self._save_all_settings()
         save_config(self.config)
         if self._apply_callback:
             self._apply_callback()
-        self.close()
+        self._store_initial_state()
+        self._has_changes = False
+        self._apply_button.set_sensitive(False)
 
     def _save_all_settings(self):
         # MPD
@@ -576,3 +590,126 @@ class SettingsWindow(Adw.ApplicationWindow):
             self.config.tags.album_to_add = int(self._plugin_widgets["tags_album_to_add"].get_value())
         if "tags_single_album" in self._plugin_widgets:
             self.config.tags.single_album = self._plugin_widgets["tags_single_album"].get_active()
+
+    def _store_initial_state(self):
+        """Store initial widget values for change detection."""
+        self._initial_values = {
+            "mpd_host": self.mpd_host.get_text(),
+            "mpd_port": self.mpd_port.get_value(),
+            "mpd_password": self.mpd_password.get_text(),
+            "queue_length": self.queue_length.get_value(),
+            "history_duration": self.history_duration.get_value(),
+            "musicbrainzid": self.musicbrainzid.get_active(),
+            "repeat_disable": self.repeat_disable.get_active(),
+            "single_disable": self.single_disable.get_active(),
+            "verbosity": self.verbosity.get_selected(),
+        }
+        # Store plugin widget values
+        for key, widget in self._plugin_widgets.items():
+            if isinstance(widget, Adw.SpinRow):
+                self._initial_values[key] = widget.get_value()
+            elif isinstance(widget, Adw.SwitchRow):
+                self._initial_values[key] = widget.get_active()
+            elif isinstance(widget, Adw.ComboRow):
+                self._initial_values[key] = widget.get_selected()
+            elif isinstance(widget, (Adw.EntryRow, Adw.PasswordEntryRow)):
+                self._initial_values[key] = widget.get_text()
+
+        # Store plugin order and enabled state
+        self._initial_plugin_order = list(self._plugin_order)
+        self._initial_plugin_enabled = {
+            name: data["switch"].get_active()
+            for name, data in self._plugin_rows.items()
+        }
+
+    def _connect_change_signals(self):
+        """Connect signals to detect changes."""
+        # MPD settings
+        self.mpd_host.connect("changed", self._on_value_changed)
+        self.mpd_port.connect("notify::value", self._on_value_changed)
+        self.mpd_password.connect("changed", self._on_value_changed)
+
+        # General settings
+        self.queue_length.connect("notify::value", self._on_value_changed)
+        self.history_duration.connect("notify::value", self._on_value_changed)
+        self.musicbrainzid.connect("notify::active", self._on_value_changed)
+        self.repeat_disable.connect("notify::active", self._on_value_changed)
+        self.single_disable.connect("notify::active", self._on_value_changed)
+        self.verbosity.connect("notify::selected", self._on_value_changed)
+
+        # Plugin widgets
+        for key, widget in self._plugin_widgets.items():
+            if isinstance(widget, Adw.SpinRow):
+                widget.connect("notify::value", self._on_value_changed)
+            elif isinstance(widget, Adw.SwitchRow):
+                widget.connect("notify::active", self._on_value_changed)
+            elif isinstance(widget, Adw.ComboRow):
+                widget.connect("notify::selected", self._on_value_changed)
+            elif isinstance(widget, (Adw.EntryRow, Adw.PasswordEntryRow)):
+                widget.connect("changed", self._on_value_changed)
+
+        # Plugin switches
+        for name, data in self._plugin_rows.items():
+            data["switch"].connect("notify::active", self._on_value_changed)
+
+    def _on_value_changed(self, *args):
+        """Handle any value change."""
+        self._check_for_changes()
+
+    def _check_for_changes(self):
+        """Check if any values have changed from initial state."""
+        if not hasattr(self, "_initial_values"):
+            return
+
+        has_changes = False
+
+        # Check basic settings
+        checks = [
+            ("mpd_host", self.mpd_host.get_text()),
+            ("mpd_port", self.mpd_port.get_value()),
+            ("mpd_password", self.mpd_password.get_text()),
+            ("queue_length", self.queue_length.get_value()),
+            ("history_duration", self.history_duration.get_value()),
+            ("musicbrainzid", self.musicbrainzid.get_active()),
+            ("repeat_disable", self.repeat_disable.get_active()),
+            ("single_disable", self.single_disable.get_active()),
+            ("verbosity", self.verbosity.get_selected()),
+        ]
+
+        for key, current in checks:
+            if self._initial_values.get(key) != current:
+                has_changes = True
+                break
+
+        # Check plugin widgets
+        if not has_changes:
+            for key, widget in self._plugin_widgets.items():
+                if isinstance(widget, Adw.SpinRow):
+                    current = widget.get_value()
+                elif isinstance(widget, Adw.SwitchRow):
+                    current = widget.get_active()
+                elif isinstance(widget, Adw.ComboRow):
+                    current = widget.get_selected()
+                elif isinstance(widget, (Adw.EntryRow, Adw.PasswordEntryRow)):
+                    current = widget.get_text()
+                else:
+                    continue
+
+                if self._initial_values.get(key) != current:
+                    has_changes = True
+                    break
+
+        # Check plugin order
+        if not has_changes and self._plugin_order != self._initial_plugin_order:
+            has_changes = True
+
+        # Check plugin enabled states
+        if not has_changes:
+            for name, data in self._plugin_rows.items():
+                if data["switch"].get_active() != self._initial_plugin_enabled.get(name):
+                    has_changes = True
+                    break
+
+        self._has_changes = has_changes
+        if self._apply_button:
+            self._apply_button.set_sensitive(has_changes)
