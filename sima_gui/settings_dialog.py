@@ -39,6 +39,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         self._initial_plugin_enabled = {}
         self._has_changes = False
         self._apply_button = None
+        self._subpage_apply_buttons = []
 
         self._build_ui()
         self._connect_change_signals()
@@ -75,6 +76,11 @@ class SettingsWindow(Adw.ApplicationWindow):
         self._apply_button.connect("clicked", self._on_apply)
         header.pack_end(self._apply_button)
 
+        reset_button = Gtk.Button(icon_name="edit-undo-symbolic")
+        reset_button.set_tooltip_text("Reset to Defaults")
+        reset_button.connect("clicked", self._on_reset_defaults)
+        header.pack_start(reset_button)
+
         scrolled = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
         toolbar_view.set_content(scrolled)
 
@@ -110,7 +116,17 @@ class SettingsWindow(Adw.ApplicationWindow):
         page = Adw.NavigationPage(title=title, tag=tag)
         toolbar_view = Adw.ToolbarView()
         page.set_child(toolbar_view)
-        toolbar_view.add_top_bar(Adw.HeaderBar())
+
+        header = Adw.HeaderBar()
+        toolbar_view.add_top_bar(header)
+
+        # Add apply button to subpage
+        apply_btn = Gtk.Button(label="Apply")
+        apply_btn.add_css_class("suggested-action")
+        apply_btn.set_sensitive(False)
+        apply_btn.connect("clicked", self._on_apply)
+        header.pack_end(apply_btn)
+        self._subpage_apply_buttons.append(apply_btn)
 
         scrolled = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
         toolbar_view.set_content(scrolled)
@@ -498,7 +514,116 @@ class SettingsWindow(Adw.ApplicationWindow):
             self._apply_callback()
         self._store_initial_state()
         self._has_changes = False
-        self._apply_button.set_sensitive(False)
+        if self._apply_button:
+            self._apply_button.set_sensitive(False)
+        for btn in self._subpage_apply_buttons:
+            btn.set_sensitive(False)
+
+    def _on_reset_defaults(self, button):
+        """Reset all settings to defaults."""
+        self.config = SimaConfig()
+        self._load_config_to_widgets()
+        self._check_for_changes()
+
+    def _load_config_to_widgets(self):
+        """Load current config values into all widgets."""
+        # MPD settings
+        self.mpd_host.set_text(self.config.mpd.host)
+        self.mpd_port.set_value(self.config.mpd.port)
+        self.mpd_password.set_text(self.config.mpd.password)
+
+        # General settings
+        self.queue_length.set_value(self.config.sima.queue_length)
+        self.history_duration.set_value(self.config.sima.history_duration)
+        self.musicbrainzid.set_active(self.config.sima.musicbrainzid)
+        self.repeat_disable.set_active(self.config.sima.repeat_disable_queue)
+        self.single_disable.set_active(self.config.sima.single_disable_queue)
+
+        # Find verbosity index
+        verbosity_options = ["debug", "info", "warning", "error"]
+        verbosity_idx = verbosity_options.index(self.config.log.verbosity) if self.config.log.verbosity in verbosity_options else 1
+        self.verbosity.set_selected(verbosity_idx)
+
+        # Plugin settings
+        if "crop_consume" in self._plugin_widgets:
+            self._plugin_widgets["crop_consume"].set_value(self.config.crop.consume)
+
+        if "random_track_to_add" in self._plugin_widgets:
+            self._plugin_widgets["random_track_to_add"].set_value(self.config.random.track_to_add)
+        if "random_flavour" in self._plugin_widgets:
+            flavour_options = ["sensible", "pure"]
+            flavour_idx = flavour_options.index(self.config.random.flavour) if self.config.random.flavour in flavour_options else 0
+            self._plugin_widgets["random_flavour"].set_selected(flavour_idx)
+
+        # Lastfm settings
+        if "lastfm_queue_mode" in self._plugin_widgets:
+            mode_options = ["track", "top", "album"]
+            mode_idx = mode_options.index(self.config.lastfm.queue_mode) if self.config.lastfm.queue_mode in mode_options else 0
+            self._plugin_widgets["lastfm_queue_mode"].set_selected(mode_idx)
+        if "lastfm_max_art" in self._plugin_widgets:
+            self._plugin_widgets["lastfm_max_art"].set_value(self.config.lastfm.max_art)
+        if "lastfm_depth" in self._plugin_widgets:
+            self._plugin_widgets["lastfm_depth"].set_value(self.config.lastfm.depth)
+        if "lastfm_track_to_add" in self._plugin_widgets:
+            self._plugin_widgets["lastfm_track_to_add"].set_value(self.config.lastfm.track_to_add)
+        if "lastfm_album_to_add" in self._plugin_widgets:
+            self._plugin_widgets["lastfm_album_to_add"].set_value(self.config.lastfm.album_to_add)
+        if "lastfm_single_album" in self._plugin_widgets:
+            self._plugin_widgets["lastfm_single_album"].set_active(self.config.lastfm.single_album)
+        if "lastfm_cache" in self._plugin_widgets:
+            self._plugin_widgets["lastfm_cache"].set_active(self.config.lastfm.cache)
+
+        # Genre settings
+        if "genre_queue_mode" in self._plugin_widgets:
+            mode_options = ["track", "album"]
+            mode_idx = mode_options.index(self.config.genre.queue_mode) if self.config.genre.queue_mode in mode_options else 0
+            self._plugin_widgets["genre_queue_mode"].set_selected(mode_idx)
+        if "genre_track_to_add" in self._plugin_widgets:
+            self._plugin_widgets["genre_track_to_add"].set_value(self.config.genre.track_to_add)
+        if "genre_album_to_add" in self._plugin_widgets:
+            self._plugin_widgets["genre_album_to_add"].set_value(self.config.genre.album_to_add)
+        if "genre_single_album" in self._plugin_widgets:
+            self._plugin_widgets["genre_single_album"].set_active(self.config.genre.single_album)
+
+        # Tags settings
+        if "tags_queue_mode" in self._plugin_widgets:
+            mode_options = ["track", "album"]
+            mode_idx = mode_options.index(self.config.tags.queue_mode) if self.config.tags.queue_mode in mode_options else 0
+            self._plugin_widgets["tags_queue_mode"].set_selected(mode_idx)
+        if "tags_filter" in self._plugin_widgets:
+            self._plugin_widgets["tags_filter"].set_text(self.config.tags.filter)
+        if "tags_genre" in self._plugin_widgets:
+            self._plugin_widgets["tags_genre"].set_text(self.config.tags.genre)
+        if "tags_date" in self._plugin_widgets:
+            self._plugin_widgets["tags_date"].set_text(self.config.tags.date)
+        if "tags_comment" in self._plugin_widgets:
+            self._plugin_widgets["tags_comment"].set_text(self.config.tags.comment)
+        if "tags_label" in self._plugin_widgets:
+            self._plugin_widgets["tags_label"].set_text(self.config.tags.label)
+        if "tags_track_to_add" in self._plugin_widgets:
+            self._plugin_widgets["tags_track_to_add"].set_value(self.config.tags.track_to_add)
+        if "tags_album_to_add" in self._plugin_widgets:
+            self._plugin_widgets["tags_album_to_add"].set_value(self.config.tags.album_to_add)
+        if "tags_single_album" in self._plugin_widgets:
+            self._plugin_widgets["tags_single_album"].set_active(self.config.tags.single_album)
+
+        # Reset plugin order and enabled states to defaults
+        default_plugins = [p.strip() for p in SimaConfig().sima.internal.split(",") if p.strip()]
+        all_plugins = list(PLUGINS.keys())
+        enabled = [p for p in default_plugins if p in all_plugins]
+        disabled = [p for p in all_plugins if p not in enabled]
+        default_order = enabled + disabled
+
+        # Rebuild plugin list with default order and enabled states
+        old_switches = {name: name in enabled for name in all_plugins}
+        for name in list(self._plugin_rows.keys()):
+            self._plugins_group.remove(self._plugin_rows[name]["row"])
+        self._plugin_rows.clear()
+        self._plugin_order.clear()
+        for name in default_order:
+            self._add_plugin_row(name, old_switches[name])
+        for name, data in self._plugin_rows.items():
+            data["switch"].connect("notify::active", self._on_value_changed)
 
     def _save_all_settings(self):
         # MPD
@@ -714,3 +839,5 @@ class SettingsWindow(Adw.ApplicationWindow):
         self._has_changes = has_changes
         if self._apply_button:
             self._apply_button.set_sensitive(has_changes)
+        for btn in self._subpage_apply_buttons:
+            btn.set_sensitive(has_changes)
