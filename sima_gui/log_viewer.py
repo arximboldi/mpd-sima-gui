@@ -32,13 +32,16 @@ class LogViewer(Adw.Window):
         self._refresh_source = GLib.timeout_add(1000, self._refresh_logs)
 
         self.connect("close-request", self._on_close)
+        self.connect("show", self._on_show)
 
     def _on_close(self, window):
-        """Clean up on close."""
-        if self._refresh_source:
-            GLib.source_remove(self._refresh_source)
-            self._refresh_source = None
-        return False
+        """Hide on close instead of destroying."""
+        window.set_visible(False)
+        return True  # Prevent destruction
+
+    def _on_show(self, window):
+        """Refresh logs when window is shown."""
+        self._load_logs()
 
     def _build_ui(self):
         """Build the log viewer UI."""
