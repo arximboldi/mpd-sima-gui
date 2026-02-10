@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sima-gui"
+name = "mpd-sima-gui"
 version = "0.1.0"
 description = "GTK system tray GUI for mpd-sima"
 readme = "README.md"
@@ -15,8 +15,8 @@ dependencies = [
 ]
 
 [project.scripts]
-sima-gui = "sima_gui.main:main"
+mpd-sima-gui = "mpd_sima_gui.main:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["sima_gui*"]
+include = ["mpd_sima_gui*"]

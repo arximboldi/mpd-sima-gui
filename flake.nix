@@ -36,8 +36,8 @@
           pycairo
         ]);
 
-        sima-gui = pythonPackages.buildPythonApplication {
-          pname = "sima-gui";
+        mpd-sima-gui = pythonPackages.buildPythonApplication {
+          pname = "mpd-sima-gui";
           version = "0.1.0";
           format = "pyproject";
 
@@ -76,18 +76,18 @@
 
           meta = with pkgs.lib; {
             description = "GTK4/Adwaita GUI for mpd-sima";
-            homepage = "https://github.com/example/sima-gui";
+            homepage = "https://github.com/example/mpd-sima-gui";
             license = licenses.gpl3Plus;
             maintainers = [];
             platforms = platforms.linux;
-            mainProgram = "sima-gui";
+            mainProgram = "mpd-sima-gui";
           };
         };
 
       in {
         packages = {
-          default = sima-gui;
-          sima-gui = sima-gui;
+          default = mpd-sima-gui;
+          mpd-sima-gui = mpd-sima-gui;
         };
 
         devShells.default = pkgs.mkShell {
@@ -106,14 +106,14 @@
           shellHook = ''
             export GI_TYPELIB_PATH="${giTypeLibPath}"
             export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath gtkDeps}"
-            echo "sima-gui development environment (GTK4/Adwaita)"
-            echo "Run: python -m sima_gui"
+            echo "mpd-sima-gui development environment (GTK4/Adwaita)"
+            echo "Run: python -m mpd_sima_gui"
           '';
         };
 
         apps.default = {
           type = "app";
-          program = "${sima-gui}/bin/sima-gui";
+          program = "${mpd-sima-gui}/bin/mpd-sima-gui";
         };
       }
     );

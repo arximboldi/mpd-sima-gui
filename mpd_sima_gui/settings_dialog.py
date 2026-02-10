@@ -1,4 +1,4 @@
-"""Settings dialog for sima-gui using GTK4/Adwaita."""
+"""Settings dialog for mpd-sima-gui using GTK4/Adwaita."""
 
 import gi
 
@@ -25,7 +25,7 @@ class SettingsWindow(Adw.ApplicationWindow):
     def __init__(self, app: Adw.Application, apply_callback=None):
         super().__init__(
             application=app,
-            title="Sima",
+            title="MPD Sima",
             default_width=550,
             default_height=600,
         )
@@ -63,7 +63,7 @@ class SettingsWindow(Adw.ApplicationWindow):
 
     def _create_main_page(self):
         """Create the main page with status and navigation."""
-        page = Adw.NavigationPage(title="Sima", tag="main")
+        page = Adw.NavigationPage(title="MPD Sima", tag="main")
         toolbar_view = Adw.ToolbarView()
         page.set_child(toolbar_view)
 

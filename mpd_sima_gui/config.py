@@ -1,4 +1,4 @@
-"""Configuration management for sima-gui."""
+"""Configuration management for mpd-sima-gui."""
 
 import configparser
 from dataclasses import dataclass, field
@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any
 
 
-CONFIG_DIR = Path.home() / ".config" / "sima-gui"
-CACHE_DIR = Path.home() / ".cache" / "sima-gui"
+CONFIG_DIR = Path.home() / ".config" / "mpd-sima-gui"
+CACHE_DIR = Path.home() / ".cache" / "mpd-sima-gui"
 CONFIG_FILE = CONFIG_DIR / "mpd_sima.cfg"
 LOG_FILE = CACHE_DIR / "mpd-sima.log"
 

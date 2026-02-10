@@ -99,18 +99,18 @@ class SimaProcess:
             self._output_thread.start()
 
             with self._lock:
-                self._log_buffer.append(f"[sima-gui] Started mpd-sima (PID: {self._process.pid})")
+                self._log_buffer.append(f"[mpd-sima-gui] Started mpd-sima (PID: {self._process.pid})")
 
             return True
 
         except FileNotFoundError:
             with self._lock:
-                self._log_buffer.append("[sima-gui] Error: mpd-sima not found in PATH")
+                self._log_buffer.append("[mpd-sima-gui] Error: mpd-sima not found in PATH")
             self._running = False
             return False
         except Exception as e:
             with self._lock:
-                self._log_buffer.append(f"[sima-gui] Error starting mpd-sima: {e}")
+                self._log_buffer.append(f"[mpd-sima-gui] Error starting mpd-sima: {e}")
             self._running = False
             return False
 
@@ -123,7 +123,7 @@ class SimaProcess:
 
         if self._process.poll() is None:
             with self._lock:
-                self._log_buffer.append(f"[sima-gui] Stopping mpd-sima (PID: {self._process.pid})")
+                self._log_buffer.append(f"[mpd-sima-gui] Stopping mpd-sima (PID: {self._process.pid})")
 
             # Try graceful shutdown first
             self._process.terminate()
@@ -136,7 +136,7 @@ class SimaProcess:
                 self._process.wait()
 
             with self._lock:
-                self._log_buffer.append("[sima-gui] mpd-sima stopped")
+                self._log_buffer.append("[mpd-sima-gui] mpd-sima stopped")
 
         self._process = None
 

@@ -1,4 +1,4 @@
-"""Main entry point for sima-gui."""
+"""Main entry point for mpd-sima-gui."""
 
 import sys
 

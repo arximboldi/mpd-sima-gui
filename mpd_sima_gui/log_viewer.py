@@ -1,4 +1,4 @@
-"""Log viewer dialog for sima-gui using GTK4/Adwaita."""
+"""Log viewer dialog for mpd-sima-gui using GTK4/Adwaita."""
 
 import gi
 

@@ -109,8 +109,8 @@ DBUSMENU_INTERFACE = """
 class StatusIcon:
     """System tray icon using DBus StatusNotifierItem protocol."""
 
-    ICON_ACTIVE = "sima-gui-enabled"
-    ICON_INACTIVE = "sima-gui-disabled"
+    ICON_ACTIVE = "mpd-sima-gui-enabled"
+    ICON_INACTIVE = "mpd-sima-gui-disabled"
     ICON_SIZE = 22  # Standard tray icon size
 
     # Menu item IDs
@@ -343,9 +343,9 @@ class StatusIcon:
         if property_name == "Category":
             return GLib.Variant("s", "ApplicationStatus")
         elif property_name == "Id":
-            return GLib.Variant("s", "sima-gui")
+            return GLib.Variant("s", "mpd-sima-gui")
         elif property_name == "Title":
-            return GLib.Variant("s", "mpd-sima")
+            return GLib.Variant("s", "MPD Sima")
         elif property_name == "Status":
             return GLib.Variant("s", "Active")
         elif property_name == "IconName":

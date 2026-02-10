@@ -1,4 +1,4 @@
-"""Main GTK4/Adwaita application for sima-gui."""
+"""Main GTK4/Adwaita application for mpd-sima-gui."""
 
 import signal
 import gi
@@ -16,11 +16,11 @@ from .config import ensure_dirs, CONFIG_FILE
 
 
 class SimaApplication(Adw.Application):
-    """Main application for sima-gui."""
+    """Main application for mpd-sima-gui."""
 
     def __init__(self):
         super().__init__(
-            application_id="io.github.sima_gui",
+            application_id="io.github.mpd_sima_gui",
             flags=Gio.ApplicationFlags.FLAGS_NONE,
         )
 
